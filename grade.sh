@@ -25,6 +25,7 @@ fi
 
 echo Grading stage
 rm -rf src/main/java/*
+mkdir -p src/main/java
 cp -r $1/clean_copy/* src/main/java
 rm -f src/main/java/concurrentcube/CubeTest.java
 
