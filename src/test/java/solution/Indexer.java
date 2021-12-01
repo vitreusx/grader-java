@@ -8,7 +8,7 @@ public class Indexer {
 
     public int index(Side facingSide, Side rotatedSide, int layer, int offset) {
         int rotatedSideIndex = Side.rotatedSideIndex(facingSide, rotatedSide);
-        Affine coordMap = facingSide.coordMaps()[rotatedSideIndex];
+        Coord coordMap = facingSide.coordMaps()[rotatedSideIndex];
         int row = coordMap.row(size, layer, offset);
         int column = coordMap.column(size, layer, offset);
         return column + size * (row + size * rotatedSide.ordinal());

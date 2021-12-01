@@ -2,8 +2,8 @@ package solution;
 
 import java.util.Arrays;
 
-import static solution.Affine.*;
 import static solution.Axis.*;
+import static solution.Coord.*;
 
 public enum Side {
     TOP, LEFT, FRONT, RIGHT, BACK, BOTTOM;
@@ -57,7 +57,7 @@ public enum Side {
         return rotatedSidesIndices[facingSide.ordinal()][targetSide.ordinal()];
     }
 
-    static Affine[][] coordMapsArray = {
+    static Coord[][] coordMapsArray = {
             { UL, UL, UL, UL },
             { LD, LD, LD, RU },
             { RU, DR, LD, UL },
@@ -66,7 +66,7 @@ public enum Side {
             { DR, DR, DR, DR }
     };
 
-    public Affine[] coordMaps() {
+    public Coord[] coordMaps() {
         return coordMapsArray[ordinal()];
     }
 }

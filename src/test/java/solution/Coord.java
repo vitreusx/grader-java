@@ -1,6 +1,6 @@
 package solution;
 
-public enum Affine {
+public enum Coord {
     UL, LD, DR, RU;
 
     public int row(int size, int layer, int offset) {
