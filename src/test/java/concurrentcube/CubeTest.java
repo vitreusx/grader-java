@@ -1,18 +1,15 @@
 package concurrentcube;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.api.*;
 
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,51 +32,94 @@ class CubeTest {
         }
     }
 
-    static boolean simulatedBehaviourIsEqual(int size, Cube cube, List<Object> operations)
-            throws InterruptedException {
-        operations.add(new ShowOp(cube.show()));
+    // A class for storing the sequence of actions over the cube, as well
+    // as verifying whether the execution matches that of the reference
+    // implementation executed sequentially.
+    static class History {
+        public List<Object> operations;
 
-        Cube refCube = new Cube(
-                size,
-                (side, layer) -> {},
-                (side, layer) -> {},
-                () -> {},
-                () -> {});
-
-        int counter = 0;
-        for (Object op: operations) {
-            if (op instanceof RotateOp) {
-                RotateOp rotateOp = (RotateOp) op;
-                refCube.rotate(rotateOp.side, rotateOp.layer);
-            }
-            else if (op instanceof ShowOp) {
-                ShowOp showOp = (ShowOp) op;
-                String state = refCube.show();
-                if (!showOp.state.equals(state)) {
-                    return false;
-                }
-            }
-            ++counter;
+        public History() {
+            operations = new ArrayList<>();
         }
 
-        return true;
+        public RotateOp addRotateOp(int side, int layer) {
+            RotateOp rotateOp = new RotateOp(side, layer);
+            operations.add(rotateOp);
+            return rotateOp;
+        }
+
+        public ShowOp addShowOp() {
+            // We use a null, because we will fill it in later on.
+            ShowOp showOp = new ShowOp(null);
+            operations.add(showOp);
+            return showOp;
+        }
+
+        public boolean validate(int size, Cube cube) {
+            try {
+                operations.add(new ShowOp(cube.show()));
+
+                solution.Cube refCube = new solution.Cube(
+                        size,
+                        (side, layer) -> {},
+                        (side, layer) -> {},
+                        () -> {},
+                        () -> {});
+
+                for (Object op: operations) {
+                    if (op instanceof RotateOp) {
+                        RotateOp rotateOp = (RotateOp) op;
+                        refCube.rotate(rotateOp.side, rotateOp.layer);
+                    }
+                    else if (op instanceof ShowOp) {
+                        ShowOp showOp = (ShowOp) op;
+                        String state = refCube.show();
+                        if (!showOp.state.equals(state)) {
+                            return false;
+                        }
+                    }
+                }
+
+                return true;
+            }
+            catch (InterruptedException e) {
+                // This code is never reached, but we need to shut up the compiler.
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Wait at a barrier, without caring about exceptions. Makes code slightly more terse.
+     * @param barrier The barrier to wait at.
+     */
+    static void syncThreadsAt(CyclicBarrier barrier) {
+        try {
+            barrier.await();
+        }
+        catch (InterruptedException | BrokenBarrierException ignored) {}
     }
 
     @Test
     @DisplayName("Testing correctness of concurrent <rotate> operations.")
-    void checkCorrectnessOfRotate() throws InterruptedException {
-        int size = 3;
+    void testCorrectnessOfRunningRotate() throws InterruptedException {
+        // We will simply launch a bunch of threads, let them do random rotates,
+        // wait a while to accumulate them, and in the end validate the state.
+        int size = 8;
 
-        // The way we will check the correctness shall be by registering the
-        // operations we invoke, and then (sequentially) simulating them on the
-        // reference solution and checking the results.
-        Lock insertLock = new ReentrantLock();
-        List<Object> operations = new ArrayList<>();
+        History history = new History();
+
+        // We use a flag here, so that in case we call cube methods after the experiment
+        // (say, in the validate function above), we don't do anything.
+        AtomicBoolean testMode = new AtomicBoolean(true);
 
         BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
-            insertLock.lock();
-            operations.add(new RotateOp(side, layer));
-            insertLock.unlock();
+            if (testMode.get()) {
+                // Synchronized is here, because (1) we use lists, (2) just in case memory consistency breaks down.
+                synchronized (history) {
+                    history.addRotateOp(side, layer);
+                }
+            }
         };
         BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {};
         Runnable beforeShowing = () -> {};
@@ -89,7 +129,9 @@ class CubeTest {
                 beforeRotation, afterRotation,
                 beforeShowing, afterShowing);
 
+        // We use this flag to gracefully stop the threads later on.
         AtomicBoolean stillRunning = new AtomicBoolean(true);
+
         AtomicBoolean hasThrown = new AtomicBoolean(false);
 
         Runnable workerFn = () -> {
@@ -118,49 +160,50 @@ class CubeTest {
             thread.start();
         }
 
-        Thread.sleep(1000);
+        Thread.sleep(250);
 
         stillRunning.set(false);
         for (Thread thread: threadList) {
             thread.join();
         }
 
-        assertFalse(hasThrown.get());
-        assertTrue(simulatedBehaviourIsEqual(size, cube, operations));
+        testMode.set(false);
+        assertFalse(hasThrown.get(),
+                "Methods returned InterruptedException spuriously.");
+        assertTrue(history.validate(size, cube),
+                "The state doesn't match the reference implementation.");
     }
 
     @Test
     @DisplayName("Testing correctness of <rotate> and <show>")
-    void checkCorrectnessOfBoth() throws InterruptedException {
-        int size = 16;
+    void testCorrectnessWhenRunningBoth() throws InterruptedException {
+        // This is pretty much the same test, but now we also do show calls.
+        int size = 8;
 
-        Lock insertLock = new ReentrantLock(true);
-        List<Object> operations = new ArrayList<>();
+        History history = new History();
 
-        // In order to handle checking the results of <show>, we do a trick
-        // wherein we add a ShowOp to the list, and update the result value within
-        // after we get it later on.
+        // In order to handle recording the show operations, we need to do something as follows:
+        // 1. Add the rotate op with null state within "beforeRotation".
+        // 2. Once we exit the show call and get the state, we fill it in.
+        // We use showOpRef for holding the incomplete rotate op added to the history.
         ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
         AtomicBoolean stillRunning = new AtomicBoolean(true);
-
-        Lock ensureSeq = new ReentrantLock(true);
+        AtomicBoolean testMode = new AtomicBoolean(true);
 
         BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
-            insertLock.lock();
-            operations.add(new RotateOp(side, layer));
-            insertLock.unlock();
+            if (testMode.get()) {
+                synchronized (history) {
+                    history.addRotateOp(side, layer);
+                }
+            }
         };
         BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
         };
         Runnable beforeShowing = () -> {
-            // This is here so that we don't add new elements while testing the
-            // correctness in the <simulateBehaviourIsEqual> method.
-            if (stillRunning.get()) {
-                insertLock.lock();
-                ShowOp showOp = new ShowOp("");
-                operations.add(showOp);
-                showOpRef.set(showOp);
-                insertLock.unlock();
+            if (testMode.get()) {
+                synchronized (history) {
+                    showOpRef.set(history.addShowOp());
+                }
             }
         };
         Runnable afterShowing = () -> {
@@ -178,7 +221,6 @@ class CubeTest {
                 Random random = new Random();
 
                 while (stillRunning.get()) {
-                    ensureSeq.lock();
                     if (random.nextDouble() > showProbability) {
                         int side = random.nextInt(6);
                         int layer = random.nextInt(size);
@@ -186,9 +228,9 @@ class CubeTest {
                     }
                     else {
                         String state = cube.show();
-                        showOpRef.get().state = new String(state);
+                        // Fill the incomplete rotate op.
+                        showOpRef.get().state = state;
                     }
-                    ensureSeq.unlock();
                 }
             }
             catch (InterruptedException e) {
@@ -206,162 +248,728 @@ class CubeTest {
             thread.start();
         }
 
-        Thread.sleep(100);
+        Thread.sleep(250);
 
         stillRunning.set(false);
         for (Thread thread: threadList) {
             thread.join();
         }
 
+        testMode.set(false);
         assertFalse(hasThrown.get(),
-                "The test has thrown an exception!");
-        assertTrue(simulatedBehaviourIsEqual(size, cube, operations),
-                "The transitions are incorrect!");
+                "Methods returned InterruptedException spuriously.");
+        assertTrue(history.validate(size, cube),
+                "The state doesn't match the reference implementation.");
+    }
+
+    @Nested
+    @DisplayName("Testing correctness of the operations in the presence of interruptions.")
+    class InterruptionTests {
+        @Test
+        @DisplayName("Simply testing integrity of the cube state.")
+        void testIntegrity() throws InterruptedException {
+            // The scenario here is fairly simple: we do stuff as in the previous test, but the main thread
+            // will randomly interrupt threads for some time. The interrupted threads will continue working looping
+            // so that we interrupt enough of them. We also check, just in case, whether the interrupt flag is not set,
+            // as is the convention.
+            int size = 8;
+
+            History history = new History();
+
+            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+            AtomicBoolean stillRunning = new AtomicBoolean(true);
+            AtomicBoolean testMode = new AtomicBoolean(true);
+
+            BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        history.addRotateOp(side, layer);
+                    }
+                }
+            };
+            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+            };
+            Runnable beforeShowing = () -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        showOpRef.set(history.addShowOp());
+                    }
+                }
+            };
+            Runnable afterShowing = () -> {
+            };
+
+            Cube cube = new Cube(size,
+                    beforeRotation, afterRotation,
+                    beforeShowing, afterShowing);
+
+            AtomicBoolean interruptFlagRaised = new AtomicBoolean(false);
+            double showProbability = 0.1;
+
+            Runnable workerFn = () -> {
+                Random random = new Random();
+
+                while (stillRunning.get()) {
+                    try {
+                        if (random.nextDouble() > showProbability) {
+                            int side = random.nextInt(6);
+                            int layer = random.nextInt(size);
+                            cube.rotate(side, layer);
+                        }
+                        else {
+                            String state = cube.show();
+                            showOpRef.get().state = state;
+                        }
+                    }
+                    catch (InterruptedException e) {
+                        if (Thread.currentThread().isInterrupted()) {
+                            interruptFlagRaised.set(true);
+                        }
+                    }
+                }
+            };
+
+            List<Thread> threadList = new ArrayList<>();
+            int numThreads = 2*Runtime.getRuntime().availableProcessors();
+            for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+                threadList.add(new Thread(workerFn));
+            }
+
+            for (Thread thread: threadList) {
+                thread.start();
+            }
+
+            long testDurationNs = (long)250e6; // 250 ms
+            Random random = new Random();
+            long start = System.nanoTime();
+            while (System.nanoTime() - start < testDurationNs) {
+                int threadIndex = random.nextInt(numThreads);
+                threadList.get(threadIndex).interrupt();
+                Thread.sleep(1);
+            }
+
+            stillRunning.set(false);
+            for (Thread thread: threadList) {
+                thread.join();
+            }
+
+            testMode.set(false);
+            assertFalse(interruptFlagRaised.get(),
+                    "The interrupt flag was raised by a method throwing InterruptedException");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
+        }
+
+        @Test
+        @DisplayName("Testing whether the interruptions actually end the threads.")
+        void testWhetherInterruptionsEndThreads() throws InterruptedException {
+            // The way we test this is as follows: the worker threads run an infinite loop, and
+            // the only way out is via the InterruptedException catch. Then, we interrupt every thread and check
+            // if, after a while, all of them are not alive.
+            int size = 8;
+
+            History history = new History();
+
+            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+            AtomicBoolean testMode = new AtomicBoolean(true);
+
+            BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        history.addRotateOp(side, layer);
+                    }
+                }
+            };
+            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+            };
+            Runnable beforeShowing = () -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        showOpRef.set(history.addShowOp());
+                    }
+                }
+            };
+            Runnable afterShowing = () -> {
+            };
+
+            Cube cube = new Cube(size,
+                    beforeRotation, afterRotation,
+                    beforeShowing, afterShowing);
+
+            AtomicBoolean interruptFlagRaised = new AtomicBoolean(false);
+            double showProbability = 0.1;
+
+            Runnable workerFn = () -> {
+                Random random = new Random();
+
+                try {
+                    while (true) {
+                        if (random.nextDouble() > showProbability) {
+                            int side = random.nextInt(6);
+                            int layer = random.nextInt(size);
+                            cube.rotate(side, layer);
+                        }
+                        else {
+                            String state = cube.show();
+                            showOpRef.get().state = state;
+                        }
+                    }
+                }
+                catch (InterruptedException e) {
+                    if (Thread.currentThread().isInterrupted()) {
+                        interruptFlagRaised.set(true);
+                    }
+                }
+            };
+
+            List<Thread> threadList = new ArrayList<>();
+            int numThreads = 2*Runtime.getRuntime().availableProcessors();
+            for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+                threadList.add(new Thread(workerFn));
+            }
+
+            for (Thread thread: threadList) {
+                thread.start();
+            }
+
+            Thread.sleep(250);
+            for (Thread thread: threadList) {
+                thread.interrupt();
+            }
+            Thread.sleep(250);
+
+            for (Thread thread: threadList) {
+                assertFalse(thread.isAlive(),
+                        "Thread, which was interrupted, has not stopped execution.");
+            }
+
+            testMode.set(false);
+            assertFalse(interruptFlagRaised.get(),
+                    "The interrupt flag was raised by a method throwing InterruptedException");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
+        }
     }
 
     @Test
-    @DisplayName("Testing correctness of <rotate> and <show> in the presence of interruptions")
-    void testOperationsWithInterruptions() {
+    @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
+    void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
+        // We test it in a following fashion: we have two threads ("active" and "waiting"), we start the "active" one
+        // and ensure it's at the afterRotation/afterShowing call. Then, we have it wait at a second barrier, at which
+        // it will wait until we're done testing. We then launch the "waiting" thread, wait a bit (50ms here) until
+        // we're reasonably sure they're waiting at the locks, and interrupt it. The catch block contains a barrier,
+        // and we wait at it in the main thread for a reasonable time (100ms) to check whether it has arrived there.
+        // We repeat this for both show task and the rotate task waiting.
+        int size = 8;
 
-    }
+        History history = new History();
 
-    @Test
-    @DisplayName("Checking correctness of <rotate> and <show> in the presence of interruptions")
-    void verifyImmediate() throws InterruptedException {
-        int size = 16;
+        ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+        AtomicBoolean testMode = new AtomicBoolean(true);
 
-        CyclicBarrier beforeRotationBarrier = new CyclicBarrier(2);
-        CyclicBarrier interruptBarrier = new CyclicBarrier(2);
+        CyclicBarrier activeThreadPresent = new CyclicBarrier(2);
+        CyclicBarrier activeThreadExit = new CyclicBarrier(2);
 
         BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
-            waitIgnoreExn(beforeRotationBarrier);
-            try { Thread.sleep((long)1e6); }
-            catch (InterruptedException ignored) {}
+            if (testMode.get()) {
+                synchronized (history) {
+                    history.addRotateOp(side, layer);
+                }
+            }
         };
-        BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {};
-        Runnable beforeShowing = () -> {};
-        Runnable afterShowing = () -> {};
+        BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+            if (testMode.get()) {
+                syncThreadsAt(activeThreadPresent);
+                syncThreadsAt(activeThreadExit);
+            }
+        };
+        Runnable beforeShowing = () -> {
+            if (testMode.get()) {
+                synchronized (history) {
+                    showOpRef.set(history.addShowOp());
+                }
+            }
+        };
+        Runnable afterShowing = () -> {
+            if (testMode.get()) {
+                syncThreadsAt(activeThreadPresent);
+                syncThreadsAt(activeThreadExit);
+            }
+        };
 
         Cube cube = new Cube(size,
                 beforeRotation, afterRotation,
                 beforeShowing, afterShowing);
 
-        Runnable workerFn = () -> {
+        CyclicBarrier waitingRotateThreadInterrupted = new CyclicBarrier(2);
+        Runnable rotateTask = () -> {
             try {
                 cube.rotate(0, 0);
             }
-            catch (InterruptedException e) {
-                waitIgnoreExn(interruptBarrier);
+            catch (InterruptedException ignored) {
+                syncThreadsAt(waitingRotateThreadInterrupted);
             }
         };
 
-        Thread blockingThread = new Thread(workerFn);
-        blockingThread.start();
-        waitIgnoreExn(beforeRotationBarrier);
+        CyclicBarrier waitingShowThreadInterrupted = new CyclicBarrier(2);
+        Runnable showTask = () -> {
+            try {
+                String state = cube.show();
+                showOpRef.get().state = state;
+            }
+            catch (InterruptedException ignored) {
+                syncThreadsAt(waitingShowThreadInterrupted);
+            }
+        };
 
-        Thread waitingThread = new Thread(workerFn);
-        waitingThread.start();
+        Thread activeRotateThread = new Thread(rotateTask);
+        Thread waitingRotateThread = new Thread(rotateTask);
+        Thread waitingShowThread = new Thread(showTask);
 
-        waitingThread.interrupt();
-        waitIgnoreExn(interruptBarrier);
+        activeRotateThread.start();
+        syncThreadsAt(activeThreadPresent);
+
+        waitingRotateThread.start();
+        Thread.sleep(50);
+        assertDoesNotThrow(() -> {
+            waitingRotateThread.interrupt();
+            waitingRotateThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
+        }, "Interrupted rotate task still (seemingly) waits at a lock.");
+
+        waitingShowThread.start();
+        Thread.sleep(50);
+        assertDoesNotThrow(() -> {
+            waitingShowThread.interrupt();
+            waitingShowThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
+        }, "Interrupted show task still (seemingly) waits at a lock.");
+
+        syncThreadsAt(activeThreadExit);
+
+        activeRotateThread.join();
+        waitingRotateThread.join();
+        waitingShowThread.join();
+
+        testMode.set(false);
+        assertTrue(history.validate(size, cube),
+                "The state doesn't match the reference implementation.");
     }
 
-    @ParameterizedTest
-    @CsvSource({"0,0,0,1", "0,0,5,0", "1,0,3,0", "2,0,4,0"})
-    void verifyTrueParallelism(int side1, int layer1, int side2, int layer2) throws InterruptedException {
-        CyclicBarrier workersBarrier = new CyclicBarrier(2);
-        CyclicBarrier entireBarrier = new CyclicBarrier(3);
+    @Nested
+    @DisplayName("Testing whether non-conflicting operations are executed in parallel.")
+    class ParallelExecutionTests {
+        // This is an unified template for running the tasks. The "Function<Cube, String>" is sort-of a fused
+        // version of both show and rotate: the rotate task will return null, which we will detect so that we can
+        // set the state string to the appropriate value in showOp in the history validation part of the code.
+        void testTemplate(int size, Function<Cube, String> task1, Function<Cube, String> task2)
+                throws InterruptedException {
+            // In order to check whether the execution is parallel, we set up a barrier with threshold of 3,
+            // and start two threads with non-conflicting actions. We let threads wait at the barrier in both beforeX
+            // and afterX callbacks, and after starting the threads wait at the barrier in the main threads for some
+            // reasonable time. If it times out, not all the threads have arrived at the barriers, so they weren't
+            // executing in parallel. We do this for both the beforeX barrier and the afterX barrier.
+            History history = new History();
 
-        BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {};
-        BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
-            waitIgnoreExn(workersBarrier);
-            waitIgnoreExn(entireBarrier);
-        };
-        Runnable beforeShowing = () -> {};
-        Runnable afterShowing = () -> {};
+            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+            AtomicBoolean testMode = new AtomicBoolean(true);
 
-        int size = 3;
-        Cube cube = new Cube(size,
-                beforeRotation, afterRotation,
-                beforeShowing, afterShowing);
+            CyclicBarrier parallelThreadsBarrier = new CyclicBarrier(3);
 
-        Thread worker1 = new Thread(() -> {
-            try { cube.rotate(side1, layer1); }
-            catch (InterruptedException ignored) {}
-        });
-        worker1.start();
+            BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        history.addRotateOp(side, layer);
+                    }
+                    syncThreadsAt(parallelThreadsBarrier);
+                }
+            };
+            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    syncThreadsAt(parallelThreadsBarrier);
+                }
+            };
+            Runnable beforeShowing = () -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        showOpRef.set(history.addShowOp());
+                    }
+                    syncThreadsAt(parallelThreadsBarrier);
+                }
+            };
+            Runnable afterShowing = () -> {
+                if (testMode.get()) {
+                    syncThreadsAt(parallelThreadsBarrier);
+                }
+            };
 
-        Thread worker2 = new Thread(() -> {
-            try { cube.rotate(side2, layer2); }
-            catch (InterruptedException ignored) {}
-        });
-        worker2.start();
+            Cube cube = new Cube(size,
+                    beforeRotation, afterRotation,
+                    beforeShowing, afterShowing);
 
-        waitIgnoreExn(entireBarrier);
+            Thread thread1 = new Thread(() -> {
+                String result = task1.apply(cube);
+                if (result != null) {
+                    // task1 is a show(), so we proceed as usual with show calls
+                    showOpRef.get().state = result;
+                }
+            });
+
+            Thread thread2 = new Thread(() -> {
+                String result = task2.apply(cube);
+                if (result != null) {
+                    // task2 is a show(), so we proceed as usual with show calls
+                    showOpRef.get().state = result;
+                }
+            });
+
+            thread1.start();
+            thread2.start();
+
+            assertDoesNotThrow(() -> {
+                parallelThreadsBarrier.await(100, TimeUnit.MILLISECONDS);
+            }, "Both of the threads have not reached the beforeX callback.");
+
+            assertDoesNotThrow(() -> {
+                parallelThreadsBarrier.await(100, TimeUnit.MILLISECONDS);
+            }, "Both of the threads have not reached the afterX callback.");
+
+            thread1.join();
+            thread2.join();
+
+            testMode.set(false);
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
+        }
+
+        Function<Cube, String> showTask() {
+            return (cube) -> {
+                try {
+                    return cube.show();
+                }
+                catch (InterruptedException e) {
+                    // This code shouldn't be ever reached.
+                    return "";
+                }
+            };
+        }
+
+        Function<Cube, String> rotateTask(int side, int layer) {
+            return (cube) -> {
+                try {
+                    cube.rotate(side, layer);
+                    return null;
+                }
+                catch (InterruptedException e) {
+                    // This code shouldn't be ever reached.
+                    return null;
+                }
+            };
+        }
+
+        @Test
+        @DisplayName("Testing whether <show> operations are parallel.")
+        void testParallelShowOperations() throws InterruptedException {
+            testTemplate(8, showTask(), showTask());
+        }
+
+        @Test
+        @DisplayName("Testing whether <rotate> operations on the same side/different layers are parallel.")
+        void testParallelRotateSameSide() throws InterruptedException {
+            testTemplate(8, rotateTask(0, 0), rotateTask(0, 1));
+        }
+
+        @Test
+        @DisplayName("Testing whether <rotate> operations on the same axis/different layers are parallel.")
+        void testParallelRotateSameAxis() throws InterruptedException {
+            testTemplate(8, rotateTask(0, 0), rotateTask(5, 0));
+            testTemplate(8, rotateTask(1, 0), rotateTask(3, 0));
+            testTemplate(8, rotateTask(2, 0), rotateTask(4, 0));
+        }
+    }
+
+    @Nested
+    @DisplayName("Testing sequentiality of conflicting operations.")
+    class SequentialityTests {
+        void testTemplate(int size, Function<Cube, String> task1, Function<Cube, String> task2)
+                throws InterruptedException {
+            // We ensure that the conflicting operations are executed sequentially by running two threads
+            // ("active" and "waiting"), starting the active one and ensuring that it has reached the beforeX callback,
+            // and then starting the waiting one and ensuring that it has *not* reached the afterX callback (by waiting
+            // at a barrier for 100ms).
+            History history = new History();
+
+            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+            AtomicBoolean testMode = new AtomicBoolean(true);
+
+            AtomicBoolean activeThread = new AtomicBoolean(true);
+            ThreadLocal<Boolean> isActive = new ThreadLocal<>();
+            CyclicBarrier activeThreadEntry = new CyclicBarrier(2);
+            CyclicBarrier waitingThreadExit = new CyclicBarrier(2);
+            CyclicBarrier activeThreadExit = new CyclicBarrier(2);
+
+            BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        history.addRotateOp(side, layer);
+                    }
+
+                    // The first thread entering will have isActive set to true, the other to false.
+                    if (activeThread.get()) {
+                        activeThread.set(false);
+                        isActive.set(true);
+                        syncThreadsAt(activeThreadEntry);
+                    }
+                    else {
+                        isActive.set(false);
+                    }
+                }
+            };
+            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+                if (testMode.get()) {
+                    if (isActive.get()) {
+                        syncThreadsAt(activeThreadExit);
+                    }
+                    else {
+                        syncThreadsAt(waitingThreadExit);
+                    }
+                }
+            };
+            Runnable beforeShowing = () -> {
+                if (testMode.get()) {
+                    synchronized (history) {
+                        showOpRef.set(history.addShowOp());
+                    }
+
+                    if (activeThread.get()) {
+                        activeThread.set(false);
+                        isActive.set(true);
+                        syncThreadsAt(activeThreadEntry);
+                    }
+                    else {
+                        isActive.set(false);
+                    }
+                }
+            };
+            Runnable afterShowing = () -> {
+                if (testMode.get()) {
+                    if (isActive.get()) {
+                        syncThreadsAt(activeThreadExit);
+                    }
+                    else {
+                        syncThreadsAt(waitingThreadExit);
+                    }
+                }
+            };
+
+            Cube cube = new Cube(size,
+                    beforeRotation, afterRotation,
+                    beforeShowing, afterShowing);
+
+            Thread thread1 = new Thread(() -> {
+                String result = task1.apply(cube);
+                if (result != null) {
+                    showOpRef.get().state = result;
+                }
+            });
+
+            Thread thread2 = new Thread(() -> {
+                String result = task2.apply(cube);
+                if (result != null) {
+                    showOpRef.get().state = result;
+                }
+            });
+
+            thread1.start();
+            syncThreadsAt(activeThreadEntry);
+
+            thread2.start();
+            assertThrows(TimeoutException.class, () -> {
+                waitingThreadExit.await(100, TimeUnit.MILLISECONDS);
+            }, "The second thread has reached the callback, and so the execution was parallel.");
+
+            syncThreadsAt(activeThreadExit);
+            syncThreadsAt(waitingThreadExit);
+
+            thread1.join();
+            thread2.join();
+
+            testMode.set(false);
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
+        }
+
+        Function<Cube, String> showTask() {
+            return (cube) -> {
+                try {
+                    return cube.show();
+                }
+                catch (InterruptedException e) {
+                    return "";
+                }
+            };
+        }
+
+        Function<Cube, String> rotateTask(int side, int layer) {
+            return (cube) -> {
+                try {
+                    cube.rotate(side, layer);
+                    return null;
+                }
+                catch (InterruptedException e) {
+                    return null;
+                }
+            };
+        }
+
+        @Test
+        @DisplayName("Test whether <rotate> and <show> are exclusive.")
+        void testSequentialRotateAndShow() throws InterruptedException {
+            testTemplate(8, showTask(), rotateTask(0, 0));
+        }
+
+        @Test
+        @DisplayName("Test whether <rotate> tasks are exclusive on different axes.")
+        void testSequentialRotateDifferentAxes() throws InterruptedException {
+            testTemplate(8, rotateTask(0, 0), rotateTask(1, 1));
+            testTemplate(8, rotateTask(0, 0), rotateTask(2, 1));
+        }
+
+        @Test
+        @DisplayName("Test whether <rotate> tasks are exclusive on the same side and the same layer.")
+        void testSequentialRotateSameSideSameLayer() throws InterruptedException {
+            for (int side = 0; side < 6; ++side) {
+                testTemplate(8, rotateTask(side, 0), rotateTask(side, 0));
+            }
+        }
+
+        @Test
+        @DisplayName("Test whether <rotate> tasks are exclusive on the same axis and the same layer.")
+        void testSequentialRotateSameAxisSameLayer() throws InterruptedException {
+            testTemplate(3, rotateTask(0, 0), rotateTask(5, 2));
+            testTemplate(3, rotateTask(1, 0), rotateTask(3, 2));
+            testTemplate(3, rotateTask(2, 0), rotateTask(4, 2));
+        }
     }
 
     @Test
-    void liveliness() {
-        ReentrantLock readersLock = new ReentrantLock();
-        CyclicBarrier readersBarrier = new CyclicBarrier(2);
-        AtomicInteger readerIdx = new AtomicInteger(0);
-        ThreadLocal<Boolean> isReader = new ThreadLocal<>();
-        AtomicBoolean readerInFunc = new AtomicBoolean(false);
-        CyclicBarrier writerBarrier = new CyclicBarrier(2);
+    @DisplayName("Testing the liveliness of the implementation.")
+    void testLiveliness() throws InterruptedException {
+        // It's impossible to be sure whether a solution satisfied liveliness, but we do something as follows:
+        // first, we launch a "filler" set of threads, which contains multiples of threads running every possible task.
+        // We wait a bit so that the cube is (presumably) always occupied, and then, for each task we launch a new
+        // thread and check if it can complete it in reasonable time (100ms here).
+        int size = 3;
 
-        BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {};
-        BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
-            if (isReader.get()) {
-                waitIgnoreExn(readersBarrier);
+        History history = new History();
+        ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
+        AtomicBoolean stillRunning = new AtomicBoolean(true);
+        AtomicBoolean testMode = new AtomicBoolean(true);
+
+        BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
+            if (testMode.get()) {
+                synchronized (history) {
+                    history.addRotateOp(side, layer);
+                }
             }
         };
-        Runnable beforeShowing = () -> {};
-        Runnable afterShowing = () -> {};
+        BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+        };
+        Runnable beforeShowing = () -> {
+            if (testMode.get()) {
+                synchronized (history) {
+                    showOpRef.set(history.addShowOp());
+                }
+            }
+        };
+        Runnable afterShowing = () -> {
+        };
 
-        int size = 16;
         Cube cube = new Cube(size,
                 beforeRotation, afterRotation,
                 beforeShowing, afterShowing);
 
-        AtomicBoolean run = new AtomicBoolean(true);
+        AtomicBoolean hasThrown = new AtomicBoolean(false);
+        double showProbability = 0.1;
 
-        Runnable readerFn = () -> {
-            isReader.set(true);
-            int localReaderIdx = readerIdx.getAndAdd(1);
+        Runnable workerFn = () -> {
+            try {
+                Random random = new Random();
 
-            while (run.get()) {
-                try {
-                    readersLock.lock();
-                    if (readerInFunc.get()) {
-                        waitIgnoreExn(readersBarrier);
-                        readerInFunc.set(false);
+                while (stillRunning.get()) {
+                    if (random.nextDouble() > showProbability) {
+                        int side = random.nextInt(6);
+                        int layer = random.nextInt(size);
+                        cube.rotate(side, layer);
                     }
                     else {
-                        readerInFunc.set(true);
+                        String state = cube.show();
+                        showOpRef.get().state = state;
                     }
-                    readersLock.unlock();
-
-                    cube.rotate(0, localReaderIdx);
                 }
-                catch (InterruptedException ignored) {}
+            }
+            catch (InterruptedException e) {
+                hasThrown.set(true);
             }
         };
 
-        Runnable writerFn = () -> {
-            try { cube.show(); }
-            catch (InterruptedException ignored) {}
-            waitIgnoreExn(writerBarrier);
-        };
+        List<Thread> fillerThreads = new ArrayList<>();
+        for (int replica = 0; replica < 4; ++replica) {
+            for (int side = 0; side < 6; ++side) {
+                for (int layer = 0; layer < size; ++layer) {
+                    int finalSide = side;
+                    int finalLayer = layer;
+                    fillerThreads.add(new Thread(() -> {
+                        try {
+                            while (stillRunning.get()) {
+                                cube.rotate(finalSide, finalLayer);
+                            }
+                        }
+                        catch (InterruptedException e) {
+                            hasThrown.set(true);
+                        }
+                    }));
+                }
+            }
+        }
 
-        Thread reader1 = new Thread(readerFn);
-        reader1.start();
+        for (Thread thread: fillerThreads) {
+            thread.start();
+        }
 
-        Thread reader2 = new Thread(readerFn);
-        reader2.start();
+        Thread.sleep(250);
 
-        Thread writer = new Thread(writerFn);
-        writer.start();
+        for (int side = 0; side < 6; ++side) {
+            for (int layer = 0; layer < size; ++layer) {
+                int finalSide = side;
+                int finalLayer = layer;
 
-        waitIgnoreExn(writerBarrier);
+                Thread thread = new Thread(() -> {
+                    try {
+                        while (stillRunning.get()) {
+                            cube.rotate(finalSide, finalLayer);
+                        }
+                    }
+                    catch (InterruptedException e) {
+                        hasThrown.set(true);
+                    }
+                });
+
+                thread.start();
+                assertDoesNotThrow(() -> {
+                    thread.join(100);
+                }, "The thread has not executed the task in time, solution presumed to be" +
+                        " not having the liveliness property");
+            }
+        }
+
+        stillRunning.set(false);
+        for (Thread thread: fillerThreads) {
+            thread.join();
+        }
+
+        testMode.set(false);
+        assertFalse(hasThrown.get(),
+                "Methods returned InterruptedException spuriously.");
+        assertTrue(history.validate(size, cube),
+                "The state doesn't match the reference implementation.");
     }
 }
