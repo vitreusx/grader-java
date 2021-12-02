@@ -89,7 +89,7 @@ class CubeTest {
                     else if (op instanceof ShowOp) {
                         ShowOp showOp = (ShowOp) op;
                         String state = refCube.show();
-                        if (!showOp.state.equals(state)) {
+                        if (showOp.state != null && !showOp.state.equals(state)) {
                             return false;
                         }
                     }
