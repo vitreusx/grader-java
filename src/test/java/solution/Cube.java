@@ -1,13 +1,16 @@
 package solution;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
-public class Cube implements ICube {
+public class Cube {
     public Cube(int size,
                 BiConsumer<Integer, Integer> beforeRotation,
                 BiConsumer<Integer, Integer> afterRotation,
@@ -104,6 +107,27 @@ public class Cube implements ICube {
 
                     for (int rotatedIdx = 0; rotatedIdx < rotatedSides.length; ++rotatedIdx) {
                         state[indices[(rotatedIdx+1)%rotatedSides.length]] = savedChars[rotatedIdx];
+                    }
+                }
+
+                if (layer == 0 || layer == size-1) {
+                    Consumer<Integer> rotateSide = (rotatedSide) -> {
+                        char[] saved = Arrays.copyOfRange(state, rotatedSide*size*size, (rotatedSide+1)*size*size);
+                        for (int x = 0; x < size; ++x) {
+                            for (int y = 0; y < size; ++y) {
+                                int u = y, v = size-1-x;
+                                state[rotatedSide*size*size+u*size+v] = saved[x*size+y];
+                            }
+                        }
+                    };
+
+                    if (layer == 0) {
+                        rotateSide.accept(sideIndex);
+                    }
+                    else {
+                        for (int idx = 0; idx < 3; ++idx) {
+                            rotateSide.accept(side.opposite().ordinal());
+                        }
                     }
                 }
             }

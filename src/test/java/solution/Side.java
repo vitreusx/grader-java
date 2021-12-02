@@ -69,4 +69,12 @@ public enum Side {
     public Coord[] coordMaps() {
         return coordMapsArray[ordinal()];
     }
+
+    static Side[] oppositeArray = {
+            BOTTOM, RIGHT, BACK, LEFT, FRONT, TOP
+    };
+
+    public Side opposite() {
+        return oppositeArray[ordinal()];
+    }
 }

@@ -70,7 +70,7 @@ class CubeTest {
 
                 t.start();
                 assertDoesNotThrow(() -> {
-                    t.join(100);
+                    t.join(1000);
                 }, "Could not get the final state in the validation procedure.");
 
                 solution.Cube refCube = new solution.Cube(
@@ -98,7 +98,6 @@ class CubeTest {
 
                 String finalRefState = refCube.show();
                 return finalState.get().equals(finalRefState);
-//                return true;
             }
             catch (InterruptedException e) {
                 // This code is never reached, but we need to shut up the compiler.
@@ -118,8 +117,8 @@ class CubeTest {
         catch (InterruptedException | BrokenBarrierException ignored) {}
     }
 
-    static void join(Thread t, long timeoutMs, String message) throws InterruptedException {
-        t.join(timeoutMs);
+    static void waitForThreadJoin(Thread t, String message) throws InterruptedException {
+        t.join(1000);
         assertFalse(t.isAlive(), message);
     }
 
@@ -187,7 +186,7 @@ class CubeTest {
 
             stillRunning.set(false);
             for (Thread thread: threadList) {
-                join(thread, 100,"The thread got stuck.");
+                waitForThreadJoin(thread, "The thread got stuck.");
             }
 
             testMode.set(false);
@@ -251,7 +250,6 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean hasThrown = new AtomicBoolean(false);
-            
 
             Runnable workerFn = () -> {
                 try {
@@ -288,7 +286,7 @@ class CubeTest {
 
             stillRunning.set(false);
             for (Thread thread: threadList) {
-                join(thread, 100,"The thread got stuck.");
+                waitForThreadJoin(thread, "The thread got stuck.");
             }
 
             testMode.set(false);
@@ -399,14 +397,14 @@ class CubeTest {
 
             stillRunning.set(false);
             for (Thread thread: threadList) {
-                join(thread, 100,"The thread got stuck.");
+                waitForThreadJoin(thread, "The thread got stuck.");
             }
 
             testMode.set(false);
             assertFalse(interruptFlagRaised.get(),
                     "The interrupt flag was raised by a method throwing InterruptedException");
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
 
         @Test
@@ -485,22 +483,17 @@ class CubeTest {
             for (Thread thread: threadList) {
                 thread.interrupt();
             }
-            Thread.sleep(250);
 
             for (Thread thread: threadList) {
-                assertFalse(thread.isAlive(),
-                        "Thread, which was interrupted, has not stopped execution.");
-            }
-
-            for (Thread thread: threadList) {
-                join(thread, 100,"The thread got stuck.");
+                waitForThreadJoin(thread, "Thread, which was interrupted, has not stopped execution.");
+                if (thread.isAlive()) break;
             }
 
             testMode.set(false);
             assertFalse(interruptFlagRaised.get(),
                     "The interrupt flag was raised by a method throwing InterruptedException");
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
     }
 
@@ -586,14 +579,14 @@ class CubeTest {
             syncThreadsAt(activeThreadPresent);
 
             waitingRotateThread.start();
-            Thread.sleep(50);
+            Thread.sleep(100);
             assertDoesNotThrow(() -> {
                 waitingRotateThread.interrupt();
                 waitingRotateThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
             }, "Interrupted rotate task still (seemingly) waits at a lock.");
 
             waitingShowThread.start();
-            Thread.sleep(50);
+            Thread.sleep(100);
             assertDoesNotThrow(() -> {
                 waitingShowThread.interrupt();
                 waitingShowThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
@@ -601,13 +594,13 @@ class CubeTest {
 
             syncThreadsAt(activeThreadExit);
 
-            join(activeRotateThread, 100,"The active thread got stuck.");
-            join(waitingRotateThread, 100, "The waiting rotate thread got stuck.");
-            join(waitingShowThread, 100, "The waiting show thread got stuck.");
+            waitForThreadJoin(activeRotateThread, "The active thread got stuck.");
+            waitForThreadJoin(waitingRotateThread, "The waiting rotate thread got stuck.");
+            waitForThreadJoin(waitingShowThread, "The waiting show thread got stuck.");
 
             testMode.set(false);
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
     }
 
@@ -682,19 +675,19 @@ class CubeTest {
             thread2.start();
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(100, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(1000, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the beforeX callback.");
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(100, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(1000, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the afterX callback.");
 
-            join(thread1, 100, "The thread got stuck.");
-            join(thread2, 100, "The thread got stuck.");
+            waitForThreadJoin(thread1, "The thread got stuck.");
+            waitForThreadJoin(thread2, "The thread got stuck.");
 
             testMode.set(false);
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
 
         Function<Cube, String> showTask() {
@@ -846,12 +839,12 @@ class CubeTest {
             syncThreadsAt(activeThreadExit);
             syncThreadsAt(waitingThreadExit);
 
-            join(thread1, 100, "The thread got stuck.");
-            join(thread2, 100, "The thread got stuck.");
+            waitForThreadJoin(thread1, "The thread got stuck.");
+            waitForThreadJoin(thread2, "The thread got stuck.");
 
             testMode.set(false);
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
 
         Function<Cube, String> showTask() {
@@ -991,7 +984,8 @@ class CubeTest {
             fillerThreads.add(new Thread(() -> {
                 try {
                     while (stillRunning.get()) {
-                        cube.show();
+                        String state = cube.show();
+                        showOpRef.get().state = state;
                     }
                 }
                 catch (InterruptedException e) {
@@ -1023,7 +1017,8 @@ class CubeTest {
             }
             lateThreads.add(new Thread(() -> {
                 try {
-                    cube.show();
+                    String state = cube.show();
+                    showOpRef.get().state = state;
                 }
                 catch (InterruptedException e) {
                     hasThrown.set(true);
@@ -1035,21 +1030,21 @@ class CubeTest {
             }
 
             for (Thread t: lateThreads) {
-                join(t, 10000,
+                waitForThreadJoin(t,
                         "Late thread didn't finish in time, presumably the solution " +
                         "doesn't satisfy the liveness condition");
             }
 
             stillRunning.set(false);
             for (Thread thread: fillerThreads) {
-                join(thread, 1000, "The filler thread stuck at execution");
+                waitForThreadJoin(thread, "The filler thread stuck at execution");
             }
 
             testMode.set(false);
             assertFalse(hasThrown.get(),
                     "Methods returned InterruptedException spuriously.");
-//            assertTrue(history.validate(size, cube),
-//                    "The state doesn't match the reference implementation.");
+            assertTrue(history.validate(size, cube),
+                    "The state doesn't match the reference implementation.");
         }
     }
 }
