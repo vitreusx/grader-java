@@ -15,6 +15,8 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
+    private static final double showProbability = 0.2;
+    
     static class RotateOp {
         public int side;
         public int layer;
@@ -71,7 +73,7 @@ class CubeTest {
                     t.join(100);
                 }, "Could not get the final state in the validation procedure.");
 
-                Cube refCube = new Cube(
+                solution.Cube refCube = new solution.Cube(
                         size,
                         (side, layer) -> {},
                         (side, layer) -> {},
@@ -88,15 +90,15 @@ class CubeTest {
                         ShowOp showOp = (ShowOp) op;
                         String state = refCube.show();
                         if (!showOp.state.equals(state)) {
-//                            return false;
+                            return false;
                         }
                     }
                     ++counter;
                 }
 
                 String finalRefState = refCube.show();
-//                return finalState.get().equals(finalRefState);
-                return true;
+                return finalState.get().equals(finalRefState);
+//                return true;
             }
             catch (InterruptedException e) {
                 // This code is never reached, but we need to shut up the compiler.
@@ -249,7 +251,7 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean hasThrown = new AtomicBoolean(false);
-            double showProbability = 0.1;
+            
 
             Runnable workerFn = () -> {
                 try {
@@ -351,7 +353,7 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean interruptFlagRaised = new AtomicBoolean(false);
-            double showProbability = 0.1;
+            
 
             Runnable workerFn = () -> {
                 Random random = new Random();
@@ -444,7 +446,7 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean interruptFlagRaised = new AtomicBoolean(false);
-            double showProbability = 0.1;
+            
 
             Runnable workerFn = () -> {
                 Random random = new Random();
@@ -946,7 +948,7 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean hasThrown = new AtomicBoolean(false);
-            double showProbability = 0.1;
+            
 
             Runnable workerFn = () -> {
                 try {
@@ -1033,8 +1035,8 @@ class CubeTest {
             }
 
             for (Thread t: lateThreads) {
-                join(t, 100,
-                        "Late thread didn't finish in time, presumably the solution" +
+                join(t, 10000,
+                        "Late thread didn't finish in time, presumably the solution " +
                         "doesn't satisfy the liveness condition");
             }
 
