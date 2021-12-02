@@ -81,11 +81,13 @@ public class Main {
         System.out.println("The original validate procedure:");
         System.out.printf("Reference cube: %b%n", validateSeq1(cube1).equals(EXPECTED1));
         System.out.printf("Other solution: %b%n", validateSeq1(cube2).equals(EXPECTED1));
+        System.out.println();
 
         solution.Cube cube3 = new solution.Cube(3, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
         othersol.Cube cube4 = new othersol.Cube(3, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
         boolean agree = validateSeq2(cube3).equals(validateSeq2(cube4));
         System.out.printf("The solutions agree on another sequence: %b%n", agree);
+        System.out.println();
 
         System.out.println("Reference solution state:");
         System.out.println(prettyPrintCube(cube3.show()));
