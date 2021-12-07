@@ -27,6 +27,7 @@ for solution in payload/*; do
             echo "error: bad name and/or format" | tee -a "$log"
             echo "$name" >>to_check/name-errors.txt
         else
+            rm -rf "$sol_dir/renamed.tar.gz"
             rsync "$sol_dir/$name" "$sol_dir/renamed.tar.gz"
             touch "$sol_dir/.can_unpack"
         fi
@@ -40,6 +41,7 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/unpacking.out"
                 rsync "$err" "$sol_dir/unpacking.err"
             else
+                rm -rf "$sol_dir/unpacked"
                 rsync -r "$unpack/" "$sol_dir/unpacked"
                 touch "$sol_dir/.can_compile"
             fi
@@ -57,6 +59,7 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/compile.out"
                 rsync "$err" "$sol_dir/compile.err"
             else
+                rm -rf "$sol_dir/validate"
                 rsync -r "$sol_dir/compile/" "$sol_dir/validate"
                 touch "$sol_dir/.can_validate"
             fi
@@ -77,37 +80,44 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/validate.out"
                 rsync "$err" "$sol_dir/validate.err"
             else
-                rsync -r "$sol_dir/validate/" "$sol_dir/test"
+                rm -rf "$sol_dir/test_compile"
+                rsync -r "$sol_dir/validate/" "$sol_dir/test_compile"
+                touch "$sol_dir/.can_compile_tests"
+            fi
+        fi
+
+        if [[ -f "$sol_dir/.can_compile_tests" || ! -z "$CHECK_ALL" ]]; then
+            rm -rf src/main/java/
+            rsync -r "$sol_dir/test_compile/" src/main/java
+            rm -f src/main/java/concurrentcube/CubeTest.java
+
+            if ! (./gradlew clean assemble 1>"$out" 2>"$err"); then
+                echo "error: compiling tests" | tee -a "$log"
+                echo "$name" >>to_check/compiling-tests.txt
+                rsync "$out" "$sol_dir/compile-tests.out"
+                rsync "$err" "$sol_dir/compile-tests.err"
+            else
+                rm -rf "$sol_dir/test"
+                rsync -r "$sol_dir/test_compile/" "$sol_dir/test"
                 touch "$sol_dir/.can_test"
             fi
         fi
     fi
 
-    if [[ -f "$sol_dir/.can_test" && ! -f "$sol_dir/.tested" ]]; then
-        rm -f "$sol_dir/compile-tests.out"
-        rm -f "$sol_dir/compile-tests.err"
-        rm -f "$sol_dir/test-results.out"
-        rm -f "$sol_dir/test-results.err"
-        rm -f "$sol_dir/test-results.out"
-        rm -f "$sol_dir/report.txt"
+    if [[ -f "$sol_dir/.can_test" && ! -f "$sol_dir/.tested" && -z "$ONLY_VALIDATE" ]]; then
         rm -rf "$sol_dir/html"
 
         rm -rf src/main/java/
         rsync -r "$sol_dir/test/" src/main/java
         rm -f src/main/java/concurrentcube/CubeTest.java
 
-        if ! (./gradlew clean assemble 1>"$out" 2>"$err"); then
-            echo "error: compiling tests" | tee -a "$log"
-            echo "$name" >>to_check/compiling-tests.txt
-            rsync "$out" "$sol_dir/compile-tests.out"
-            rsync "$err" "$sol_dir/compile-tests.err"
-        else
-            ./gradlew test 1>"$out" 2>"$err"
-            rsync "$out" "$sol_dir/test-results.out"
-            rsync "$err" "$sol_dir/test-results.err"
-            rsync -r build/reports/tests/test/ "$sol_dir/html"
-            python3 compose_report.py >"$sol_dir/report.txt"
-            touch "$sol_dir/.tested"
-        fi
+        ./gradlew clean assemble 1>"$out" 2>"$err"
+        ./gradlew test 1>"$out" 2>"$err"
+        rsync "$out" "$sol_dir/test-results.out"
+        rsync "$err" "$sol_dir/test-results.err"
+        rsync -r build/reports/tests/test/ "$sol_dir/html"
+        rsync -r build/test-results/test/ "$sol_dir/xml"
+        python3 compose_report.py "$name" >"$sol_dir/report.md"
+        touch "$sol_dir/.tested"
     fi
 done

@@ -16,8 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final int timeoutMultiplier = 5;
-    private static final long timeoutBuffer = 1000;
+    private static final long multiplier = 10;
+    private static final long taskEntryLag = 50*multiplier;
+    private static final long taskExecTime = 250*multiplier;
+    private static final long interruptLag = 50*multiplier;
+    private static final long sampleTime = 250;
     
     static class RotateOp {
         public int side;
@@ -38,7 +41,7 @@ class CubeTest {
     }
 
     static void waitForThreadJoin(Thread t, String message) throws InterruptedException {
-        t.join(2500);
+        t.join(taskExecTime);
         assertFalse(t.isAlive(), message);
     }
 
@@ -111,16 +114,23 @@ class CubeTest {
         }
     }
 
-    /**
-     * Wait at a barrier, without caring about exceptions. Makes code slightly more terse.
-     * @param barrier The barrier to wait at.
-     */
-    static void syncThreadsAt(CyclicBarrier barrier) {
+    static void waitForThreadAtABarrier(CyclicBarrier barrier, long timeout) {
         try {
-            barrier.await(2500, TimeUnit.MILLISECONDS);
+            barrier.await(timeout, TimeUnit.MILLISECONDS);
+        }
+        catch (InterruptedException | BrokenBarrierException ignored) {
+            // Never happens (?)
+        }
+        catch (TimeoutException ignored) {
+            fail("Waited too long for a thread at a barrier");
+        }
+    }
+
+    static void stallOnABarrier(CyclicBarrier barrier) {
+        try {
+            barrier.await();
         }
         catch (InterruptedException | BrokenBarrierException ignored) {}
-        catch (TimeoutException ignored) {}
     }
 
     @Nested
@@ -183,7 +193,7 @@ class CubeTest {
                 thread.start();
             }
 
-            Thread.sleep(250);
+            Thread.sleep(sampleTime);
 
             stillRunning.set(false);
             for (Thread thread: threadList) {
@@ -199,21 +209,19 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing correctness of sequential rotate operations.")
-        @Timeout(value = 314*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessOfSequentialRotate() throws InterruptedException {
             testTemplate(1);
         }
 
         @Test
         @DisplayName("Testing correctness of concurrent rotate operations.")
-        @Timeout(value = 522*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessOfRunningRotate() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
         }
     }
 
     @Nested
-    @DisplayName("Tests for correctness of rotate and rotate at the same time.")
+    @DisplayName("Tests for correctness of rotate and show at the same time.")
     class CorrectnessOfBoth {
         void testTemplate(int numThreads) throws InterruptedException {
             // This is pretty much the same test, but now we also do show calls.
@@ -285,7 +293,7 @@ class CubeTest {
                 thread.start();
             }
 
-            Thread.sleep(250);
+            Thread.sleep(sampleTime);
 
             stillRunning.set(false);
             for (Thread thread: threadList) {
@@ -300,15 +308,13 @@ class CubeTest {
         }
 
         @Test
-        @DisplayName("Testing correctness of rotate and rotate when sequential.")
-        @Timeout(value = 316*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
+        @DisplayName("Testing correctness of rotate and show when sequential.")
         void testCorrectnessWhenRunningBothSequentially() throws InterruptedException {
             testTemplate(1);
         }
 
         @Test
-        @DisplayName("Testing correctness of rotate and rotate")
-        @Timeout(value = 394*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
+        @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
         }
@@ -383,7 +389,7 @@ class CubeTest {
                 thread.start();
             }
 
-            long testDurationNs = (long)250e6; // 250 ms
+            long testDurationNs = (long)(sampleTime * 1e6);
             Random random = new Random();
             long start = System.nanoTime();
             while (System.nanoTime() - start < testDurationNs) {
@@ -404,7 +410,6 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing whether the interruptions actually end the threads.")
-        @Timeout(value = 403*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop, and
             // the only way out is via the InterruptedException catch. Then, we interrupt every thread and check
@@ -468,7 +473,7 @@ class CubeTest {
                 thread.start();
             }
 
-            Thread.sleep(250);
+            Thread.sleep(sampleTime);
             for (Thread thread: threadList) {
                 thread.interrupt();
             }
@@ -490,7 +495,6 @@ class CubeTest {
     class InterruptingWaitingTests {
         @Test
         @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
-        @Timeout(value = 209*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
             // We test it in a following fashion: we have two threads ("active" and "waiting"), we start the "active" one
             // and ensure it's at the afterRotation/afterShowing call. Then, we have it wait at a second barrier, at which
@@ -517,8 +521,8 @@ class CubeTest {
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    syncThreadsAt(activeThreadPresent);
-                    syncThreadsAt(activeThreadExit);
+                    stallOnABarrier(activeThreadPresent);
+                    stallOnABarrier(activeThreadExit);
                 }
             };
             Runnable beforeShowing = () -> {
@@ -530,8 +534,8 @@ class CubeTest {
             };
             Runnable afterShowing = () -> {
                 if (testMode.get()) {
-                    syncThreadsAt(activeThreadPresent);
-                    syncThreadsAt(activeThreadExit);
+                    stallOnABarrier(activeThreadPresent);
+                    stallOnABarrier(activeThreadExit);
                 }
             };
 
@@ -545,7 +549,7 @@ class CubeTest {
                     cube.rotate(0, 0);
                 }
                 catch (InterruptedException ignored) {
-                    syncThreadsAt(waitingRotateThreadInterrupted);
+                    stallOnABarrier(waitingRotateThreadInterrupted);
                 }
             };
 
@@ -556,7 +560,7 @@ class CubeTest {
                     showOpRef.get().state = state;
                 }
                 catch (InterruptedException ignored) {
-                    syncThreadsAt(waitingShowThreadInterrupted);
+                    stallOnABarrier(waitingShowThreadInterrupted);
                 }
             };
 
@@ -565,23 +569,23 @@ class CubeTest {
             Thread waitingShowThread = new Thread(showTask);
 
             activeRotateThread.start();
-            syncThreadsAt(activeThreadPresent);
+            waitForThreadAtABarrier(activeThreadPresent, taskEntryLag);
 
             waitingRotateThread.start();
-            Thread.sleep(100);
+            Thread.sleep(taskEntryLag);
             assertDoesNotThrow(() -> {
                 waitingRotateThread.interrupt();
-                waitingRotateThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
+                waitingRotateThreadInterrupted.await(interruptLag, TimeUnit.MILLISECONDS);
             }, "Interrupted rotate task still (seemingly) waits at a lock.");
 
             waitingShowThread.start();
-            Thread.sleep(100);
+            Thread.sleep(taskEntryLag);
             assertDoesNotThrow(() -> {
                 waitingShowThread.interrupt();
-                waitingShowThreadInterrupted.await(100, TimeUnit.MILLISECONDS);
+                waitingShowThreadInterrupted.await(interruptLag, TimeUnit.MILLISECONDS);
             }, "Interrupted show task still (seemingly) waits at a lock.");
 
-            syncThreadsAt(activeThreadExit);
+            waitForThreadAtABarrier(activeThreadExit, taskEntryLag);
 
             waitForThreadJoin(activeRotateThread, "The active thread got stuck.");
             waitForThreadJoin(waitingRotateThread, "The waiting rotate thread got stuck.");
@@ -618,12 +622,12 @@ class CubeTest {
                     synchronized (history) {
                         history.addRotateOp(side, layer);
                     }
-                    syncThreadsAt(parallelThreadsBarrier);
+                    stallOnABarrier(parallelThreadsBarrier);
                 }
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    syncThreadsAt(parallelThreadsBarrier);
+                    stallOnABarrier(parallelThreadsBarrier);
                 }
             };
             Runnable beforeShowing = () -> {
@@ -631,12 +635,12 @@ class CubeTest {
                     synchronized (history) {
                         showOpRef.set(history.addShowOp());
                     }
-                    syncThreadsAt(parallelThreadsBarrier);
+                    stallOnABarrier(parallelThreadsBarrier);
                 }
             };
             Runnable afterShowing = () -> {
                 if (testMode.get()) {
-                    syncThreadsAt(parallelThreadsBarrier);
+                    stallOnABarrier(parallelThreadsBarrier);
                 }
             };
 
@@ -664,11 +668,11 @@ class CubeTest {
             thread2.start();
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(1000, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(2*taskExecTime, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the beforeX callback.");
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(1000, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(2*taskExecTime, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the afterX callback.");
 
             waitForThreadJoin(thread1, "The thread got stuck.");
@@ -706,21 +710,18 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing whether rotate operations are parallel.")
-        @Timeout(value = 8*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelShowOperations() throws InterruptedException {
             testTemplate(8, showTask(), showTask());
         }
 
         @Test
         @DisplayName("Testing whether rotate operations on the same side/different layers are parallel.")
-        @Timeout(value = 5*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelRotateSameSide() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(0, 1));
         }
 
         @Test
         @DisplayName("Testing whether rotate operations on the same axis/different layers are parallel.")
-        @Timeout(value = 16*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelRotateSameAxis() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(5, 0));
             testTemplate(8, rotateTask(1, 0), rotateTask(3, 0));
@@ -744,8 +745,8 @@ class CubeTest {
 
             AtomicBoolean activeThread = new AtomicBoolean(true);
             ThreadLocal<Boolean> isActive = new ThreadLocal<>();
-            CyclicBarrier activeThreadEntry = new CyclicBarrier(2);
-            CyclicBarrier waitingThreadExit = new CyclicBarrier(2);
+            CyclicBarrier activeThreadPreExit = new CyclicBarrier(2);
+            CyclicBarrier waitingThreadEntry = new CyclicBarrier(2);
             CyclicBarrier activeThreadExit = new CyclicBarrier(2);
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
@@ -758,20 +759,18 @@ class CubeTest {
                     if (activeThread.get()) {
                         activeThread.set(false);
                         isActive.set(true);
-                        syncThreadsAt(activeThreadEntry);
                     }
                     else {
                         isActive.set(false);
+                        stallOnABarrier(waitingThreadEntry);
                     }
                 }
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
                 if (testMode.get()) {
                     if (isActive.get()) {
-                        syncThreadsAt(activeThreadExit);
-                    }
-                    else {
-                        syncThreadsAt(waitingThreadExit);
+                        stallOnABarrier(activeThreadPreExit);
+                        stallOnABarrier(activeThreadExit);
                     }
                 }
             };
@@ -784,20 +783,18 @@ class CubeTest {
                     if (activeThread.get()) {
                         activeThread.set(false);
                         isActive.set(true);
-                        syncThreadsAt(activeThreadEntry);
                     }
                     else {
                         isActive.set(false);
+                        stallOnABarrier(waitingThreadEntry);
                     }
                 }
             };
             Runnable afterShowing = () -> {
                 if (testMode.get()) {
                     if (isActive.get()) {
-                        syncThreadsAt(activeThreadExit);
-                    }
-                    else {
-                        syncThreadsAt(waitingThreadExit);
+                        stallOnABarrier(activeThreadPreExit);
+                        stallOnABarrier(activeThreadExit);
                     }
                 }
             };
@@ -821,15 +818,15 @@ class CubeTest {
             });
 
             thread1.start();
-            syncThreadsAt(activeThreadEntry);
+            waitForThreadAtABarrier(activeThreadPreExit, taskExecTime + taskEntryLag);
 
             thread2.start();
             assertThrows(TimeoutException.class, () -> {
-                waitingThreadExit.await(100, TimeUnit.MILLISECONDS);
-            }, "The second thread has reached the callback, and so the execution was parallel.");
+                waitingThreadEntry.await(taskEntryLag, TimeUnit.MILLISECONDS);
+            }, "The second thread has reached the callback, and so the execution was non-exclusive.");
 
-            syncThreadsAt(activeThreadExit);
-            syncThreadsAt(waitingThreadExit);
+            waitForThreadAtABarrier(activeThreadExit, taskEntryLag);
+            waitForThreadAtABarrier(waitingThreadEntry, taskEntryLag);
 
             waitForThreadJoin(thread1, "The thread got stuck.");
             waitForThreadJoin(thread2, "The thread got stuck.");
@@ -864,14 +861,12 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate and rotate are exclusive.")
-        @Timeout(value = 106*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateAndShow() throws InterruptedException {
             testTemplate(8, showTask(), rotateTask(0, 0));
         }
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on different axes.")
-        @Timeout(value = 208*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateDifferentAxes() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(1, 1));
             testTemplate(8, rotateTask(0, 0), rotateTask(2, 1));
@@ -879,7 +874,6 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on the same side and the same layer.")
-        @Timeout(value = 310*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateSameSideSameLayer() throws InterruptedException {
             for (int side = 0; side < 6; ++side) {
                 testTemplate(8, rotateTask(side, 0), rotateTask(side, 0));
@@ -888,7 +882,6 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on the same axis and the same layer.")
-        @Timeout(value = 613*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateSameAxisSameLayer() throws InterruptedException {
             testTemplate(3, rotateTask(0, 0), rotateTask(5, 2));
             testTemplate(3, rotateTask(1, 0), rotateTask(3, 2));
@@ -901,7 +894,6 @@ class CubeTest {
     class LivelinessTests {
         @Test
         @DisplayName("Testing the liveliness of the implementation.")
-        @Timeout(value = 400*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testLiveliness() throws InterruptedException {
             // It's impossible to be sure whether a solution satisfied liveliness, but we do something as follows:
             // first, we launch a "filler" set of threads, which contains multiples of threads running every possible task.
@@ -994,7 +986,9 @@ class CubeTest {
                 thread.start();
             }
 
-            Thread.sleep(250);
+            Thread.sleep(sampleTime);
+
+            CyclicBarrier barrier = new CyclicBarrier(6*size+2);
 
             List<Thread> lateThreads = new ArrayList<>();
             for (int side = 0; side < 6; ++side) {
@@ -1005,10 +999,12 @@ class CubeTest {
                     lateThreads.add(new Thread(() -> {
                         try {
                             cube.rotate(finalSide, finalLayer);
+                            barrier.await();
                         }
                         catch (InterruptedException e) {
                             hasThrown.set(true);
                         }
+                        catch (BrokenBarrierException ignored) {}
                     }));
                 }
             }
@@ -1016,21 +1012,19 @@ class CubeTest {
                 try {
                     String state = cube.show();
                     showOpRef.get().state = state;
+                    barrier.await();
                 }
                 catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
+                catch (BrokenBarrierException ignored) {}
             }));
 
             for (Thread t: lateThreads) {
                 t.start();
             }
 
-            for (Thread t: lateThreads) {
-                waitForThreadJoin(t,
-                        "Late thread didn't finish in time, presumably the solution " +
-                        "doesn't satisfy the liveness condition");
-            }
+            waitForThreadAtABarrier(barrier, 2 * taskExecTime * lateThreads.size());
 
             stillRunning.set(false);
             for (Thread thread: fillerThreads) {
