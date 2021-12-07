@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
+    private static final int timeoutMultiplier = 5;
+    private static final long timeoutBuffer = 1000;
     
     static class RotateOp {
         public int side;
@@ -33,6 +35,11 @@ class CubeTest {
         public ShowOp(String state) {
             this.state = state;
         }
+    }
+
+    static void waitForThreadJoin(Thread t, String message) throws InterruptedException {
+        t.join(2500);
+        assertFalse(t.isAlive(), message);
     }
 
     // A class for storing the sequence of actions over the cube, as well
@@ -69,9 +76,7 @@ class CubeTest {
                 });
 
                 t.start();
-                assertDoesNotThrow(() -> {
-                    t.join(1000);
-                }, "Could not get the final state in the validation procedure.");
+                waitForThreadJoin(t, "Could not get the final state in the validation procedure.");
 
                 solution.Cube refCube = new solution.Cube(
                         size,
@@ -112,14 +117,10 @@ class CubeTest {
      */
     static void syncThreadsAt(CyclicBarrier barrier) {
         try {
-            barrier.await();
+            barrier.await(2500, TimeUnit.MILLISECONDS);
         }
         catch (InterruptedException | BrokenBarrierException ignored) {}
-    }
-
-    static void waitForThreadJoin(Thread t, String message) throws InterruptedException {
-        t.join(1000);
-        assertFalse(t.isAlive(), message);
+        catch (TimeoutException ignored) {}
     }
 
     @Nested
@@ -198,12 +199,14 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing correctness of sequential rotate operations.")
+        @Timeout(value = 314*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessOfSequentialRotate() throws InterruptedException {
             testTemplate(1);
         }
 
         @Test
         @DisplayName("Testing correctness of concurrent rotate operations.")
+        @Timeout(value = 522*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessOfRunningRotate() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
         }
@@ -298,12 +301,14 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing correctness of rotate and rotate when sequential.")
+        @Timeout(value = 316*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessWhenRunningBothSequentially() throws InterruptedException {
             testTemplate(1);
         }
 
         @Test
         @DisplayName("Testing correctness of rotate and rotate")
+        @Timeout(value = 394*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
         }
@@ -399,6 +404,7 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing whether the interruptions actually end the threads.")
+        @Timeout(value = 403*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop, and
             // the only way out is via the InterruptedException catch. Then, we interrupt every thread and check
@@ -484,6 +490,7 @@ class CubeTest {
     class InterruptingWaitingTests {
         @Test
         @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
+        @Timeout(value = 209*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
             // We test it in a following fashion: we have two threads ("active" and "waiting"), we start the "active" one
             // and ensure it's at the afterRotation/afterShowing call. Then, we have it wait at a second barrier, at which
@@ -699,18 +706,21 @@ class CubeTest {
 
         @Test
         @DisplayName("Testing whether rotate operations are parallel.")
+        @Timeout(value = 8*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelShowOperations() throws InterruptedException {
             testTemplate(8, showTask(), showTask());
         }
 
         @Test
         @DisplayName("Testing whether rotate operations on the same side/different layers are parallel.")
+        @Timeout(value = 5*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelRotateSameSide() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(0, 1));
         }
 
         @Test
         @DisplayName("Testing whether rotate operations on the same axis/different layers are parallel.")
+        @Timeout(value = 16*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testParallelRotateSameAxis() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(5, 0));
             testTemplate(8, rotateTask(1, 0), rotateTask(3, 0));
@@ -854,12 +864,14 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate and rotate are exclusive.")
+        @Timeout(value = 106*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateAndShow() throws InterruptedException {
             testTemplate(8, showTask(), rotateTask(0, 0));
         }
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on different axes.")
+        @Timeout(value = 208*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateDifferentAxes() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(1, 1));
             testTemplate(8, rotateTask(0, 0), rotateTask(2, 1));
@@ -867,6 +879,7 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on the same side and the same layer.")
+        @Timeout(value = 310*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateSameSideSameLayer() throws InterruptedException {
             for (int side = 0; side < 6; ++side) {
                 testTemplate(8, rotateTask(side, 0), rotateTask(side, 0));
@@ -875,6 +888,7 @@ class CubeTest {
 
         @Test
         @DisplayName("Test whether rotate tasks are exclusive on the same axis and the same layer.")
+        @Timeout(value = 613*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testSequentialRotateSameAxisSameLayer() throws InterruptedException {
             testTemplate(3, rotateTask(0, 0), rotateTask(5, 2));
             testTemplate(3, rotateTask(1, 0), rotateTask(3, 2));
@@ -887,6 +901,7 @@ class CubeTest {
     class LivelinessTests {
         @Test
         @DisplayName("Testing the liveliness of the implementation.")
+        @Timeout(value = 400*timeoutMultiplier+timeoutBuffer, unit = TimeUnit.MILLISECONDS)
         void testLiveliness() throws InterruptedException {
             // It's impossible to be sure whether a solution satisfied liveliness, but we do something as follows:
             // first, we launch a "filler" set of threads, which contains multiples of threads running every possible task.
