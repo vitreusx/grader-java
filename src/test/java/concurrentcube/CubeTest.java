@@ -1024,6 +1024,7 @@ class CubeTest {
                 t.start();
             }
 
+
             waitForThreadAtABarrier(barrier, 2 * taskExecTime * lateThreads.size());
 
             stillRunning.set(false);

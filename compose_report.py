@@ -5,7 +5,7 @@ import sys
 
 order = {
     "Tests for concurrent rotate operations.": 0,
-    "Tests for correctness of rotate and rotate at the same time.": 1,
+    "Tests for correctness of rotate and show at the same time.": 1,
     "Tests for the correctness of the operations in the presence of interruptions.": 2,
     "Tests for the behaviour of interruptions and waiting at locks.": 3,
     "Tests of the parallel execution of non-conflicting operations.": 4,
