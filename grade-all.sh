@@ -27,8 +27,9 @@ for solution in payload/*; do
             echo "error: bad name and/or format" | tee -a "$log"
             echo "$name" >>to_check/name-errors.txt
         else
-            rm -rf "$sol_dir/renamed.tar.gz"
-            rsync "$sol_dir/$name" "$sol_dir/renamed.tar.gz"
+            if ! [[ -f "$sol_dir/renamed.tar.gz" ]]; then
+                rsync "$sol_dir/$name" "$sol_dir/renamed.tar.gz"
+            fi
             touch "$sol_dir/.can_unpack"
         fi
         
@@ -41,8 +42,9 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/unpacking.out"
                 rsync "$err" "$sol_dir/unpacking.err"
             else
-                rm -rf "$sol_dir/unpacked"
-                rsync -r "$unpack/" "$sol_dir/unpacked"
+                if ! [[ -d "$sol_dir/unpacked" ]]; then
+                    rsync -r "$unpack/" "$sol_dir/unpacked"
+                fi
                 touch "$sol_dir/.can_compile"
             fi
         fi
@@ -59,8 +61,9 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/compile.out"
                 rsync "$err" "$sol_dir/compile.err"
             else
-                rm -rf "$sol_dir/validate"
-                rsync -r "$sol_dir/compile/" "$sol_dir/validate"
+                if ! [[ -d "$sol_dir/validate" ]]; then
+                    rsync -r "$sol_dir/compile/" "$sol_dir/validate"
+                fi
                 touch "$sol_dir/.can_validate"
             fi
         fi
@@ -80,8 +83,9 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/validate.out"
                 rsync "$err" "$sol_dir/validate.err"
             else
-                rm -rf "$sol_dir/test_compile"
-                rsync -r "$sol_dir/validate/" "$sol_dir/test_compile"
+                if ! [[ -d "$sol_dir/test_compile" ]]; then
+                    rsync -r "$sol_dir/validate/" "$sol_dir/test_compile"
+                fi
                 touch "$sol_dir/.can_compile_tests"
             fi
         fi
@@ -97,8 +101,9 @@ for solution in payload/*; do
                 rsync "$out" "$sol_dir/compile-tests.out"
                 rsync "$err" "$sol_dir/compile-tests.err"
             else
-                rm -rf "$sol_dir/test"
-                rsync -r "$sol_dir/test_compile/" "$sol_dir/test"
+                if ! [[ -d "$sol_dir/test" ]]; then
+                    rsync -r "$sol_dir/test_compile/" "$sol_dir/test"
+                fi
                 touch "$sol_dir/.can_test"
             fi
         fi

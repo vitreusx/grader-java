@@ -1,0 +1,12 @@
+results
+to_check
+payload
+results.final
+results.backup
+backups
+.gradle
+.idea
+log
+build
+*.class
+src/main
