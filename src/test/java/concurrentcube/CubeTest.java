@@ -16,11 +16,11 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final long multiplier = 10;
+    private static final long multiplier = 20;
     private static final long taskEntryLag = 50*multiplier;
     private static final long taskExecTime = 250*multiplier;
     private static final long interruptLag = 50*multiplier;
-    private static final long sampleTime = 250;
+    private static final long sampleTime = 500;
     
     static class RotateOp {
         public int side;

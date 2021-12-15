@@ -1,128 +1,196 @@
-out=$(mktemp)
-err=$(mktemp)
-pwd="$(pwd)"
+stdout=$(mktemp)
+stderr=$(mktemp)
 
-rm -r to_check
-mkdir -p to_check
-touch to_check/name-errors.txt
-touch to_check/unpacking-errors.txt
-touch to_check/compile-errors.txt
-touch to_check/validate-errors.txt
-touch to_check/compiling-tests.txt
+mkdir -p errors
+
+name_check() {
+    if ! [[ "$name" =~ ^[a-z]{2}[0-9]{6}\.tar\.gz$ ]]; then
+        return 1
+    else
+        mkdir -p "$output_dir"
+        rsync "$input_dir/$name" "$output_dir/renamed.tar.gz"
+        return 0
+    fi
+}
+
+unpacking() {
+    work_dir=$(mktemp -d)
+    if [[ -f "$input_dir/renamed.tar.gz" ]]; then
+        if ! (tar xzf "$input_dir/renamed.tar.gz" -C $work_dir 1>$stdout 2>$stderr); then
+            rm -rf $work_dir
+            return 1
+        else
+            mkdir -p "$output_dir"
+            rsync -r "$work_dir/" "$output_dir"
+            rm -rf $work_dir
+            return 0
+        fi
+    else
+        rm -rf $work_dir
+        return 1
+    fi
+}
+
+val_compile() {
+    work_input=$(mktemp -d)
+    rsync -r "$input_dir/" "$work_input"
+    rsync Validate.java "$work_input"
+
+    if ! (cd "$work_input" && javac -Xlint -Werror Validate.java 1>$stdout 2>$stderr); then
+        rm -rf $work_input
+        return 1
+    else
+        mkdir -p "$output_dir"
+        rsync -r "$work_input/" "$output_dir"
+        rm -rf $work_input
+        return 0
+    fi
+}
+
+validate() {
+    if ! (cd "$input_dir" && java Validate 1>$stdout 2>$stderr); then
+        return 1
+    else
+        mkdir -p "$output_dir"
+        rsync -r "$input_dir/" "$output_dir"
+        return 0
+    fi
+}
+
+assemble() {
+    rm -rf build
+    rm -rf src/main/java
+    mkdir -p src/main
+    rsync -r "$input_dir/" src/main/java
+    rm -rf src/main/java/concurrentcube/CubeTest.java
+
+    if ! (./gradlew clean assemble 1>$stdout 2>$stderr); then
+        return 1
+    else
+        mkdir -p "$output_dir"
+        rsync -r "$input_dir/" "$output_dir"
+        return 0
+    fi
+}
+
+perform_tests() {
+    rm -rf build
+    rm -rf src/main/java
+    mkdir -p src/main
+    rsync -r "$input_dir/" src/main/java
+    rm -rf src/main/java/concurrentcube/CubeTest.java
+    
+    timeout --foreground --verbose --signal=SIGINT 240 ./gradlew clean test 1>$stdout 2>$stderr
+    STATUS=$?
+    if [[ "$STATUS" -eq "124" ]]; then
+        return 1
+    else
+        mkdir -p $output_dir
+        rsync $stdout "$output_dir/results.out"
+        rsync $stderr "$output_dir/results.err"
+        rsync -r build/reports/tests/test/ "$output_dir/html"
+        rsync -r build/test-results/test/ "$output_dir/xml"
+        python3 compose_report.py "$output_dir/xml" >"$output_dir/report.md"
+        return 0
+    fi
+}
+
+exec_pass() {
+    pass_name="$1"
+    error_msg="$2"
+    pass_dir="$sol_dir/$pass_name"
+
+    input_dir="$pass_dir/input"
+    output_dir="$pass_dir/output"
+
+    if ! ($pass_name); then
+        touch "$sol_dir/errors.txt"
+        echo "error: $error_msg" | tee -a "$sol_dir/errors.txt"
+        rsync "$stdout" "$pass_dir/stdout"
+        rsync "$stderr" "$pass_dir/stderr"
+        
+        touch errors/${pass_name}.txt
+        echo "$name" >>errors/${pass_name}.txt
+
+        if [[ -d "$pass_dir/fixed-input" ]]; then
+            input_dir="$pass_dir/fixed-input"
+            output_dir="$pass_dir/fixed-output"
+
+            if ! ($pass_name); then
+                echo "[admin] \"fixed\" solution for [$name], pass [$pass_name] not fixed!"
+                rsync "$stdout" "$pass_dir/fixed.stdout"
+                rsync "$stderr" "$pass_dir/fixed.stderr"
+                return 1
+            else
+                touch "$pass_dir/.allowed"
+                return 0
+            fi
+        elif [[ -f "$pass_dir/.allowed" ]]; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        touch "$pass_dir/.passed"
+        return 0
+    fi
+}
+
+copy_from() {
+    from_pass="$1"
+    to_pass="$2"
+    if [[ -d "$sol_dir/$from_pass/output" ]]; then
+        mkdir -p "$sol_dir/$to_pass/input"
+        rsync -r "$sol_dir/$from_pass/output/" "$sol_dir/$to_pass/input"
+    elif [[ -d "$sol_dir/$from_pass/fixed-output" ]]; then
+        mkdir -p "$sol_dir/$to_pass/input"
+        rsync -r "$sol_dir/$from_pass/fixed-output/" "$sol_dir/$to_pass/input"
+    fi
+}
+
+completed() {
+    pass="$1"
+    if [[ -f "$sol_dir/$pass/.passed" || -f "$sol_dir/$pass/.allowed" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 for solution in payload/*; do
     name="$(basename "$solution")"
-
     sol_dir="results/$name"
-    mkdir -p "$sol_dir"
-    rsync "$solution" "$sol_dir"
-
-    log="$sol_dir/log.txt"
-    touch "$log"
-    cat /dev/null >"$log"
-
     echo "[$name]"
-    if [[ ! -f "$sol_dir/.can_test" || ! -z "$CHECK_ALL" ]]; then
-        if ! [[ "$name" =~ ^[a-z]{2}[0-9]{6}\.tar\.gz$ ]]; then
-            echo "error: bad name and/or format" | tee -a "$log"
-            echo "$name" >>to_check/name-errors.txt
-        else
-            if ! [[ -f "$sol_dir/renamed.tar.gz" ]]; then
-                rsync "$sol_dir/$name" "$sol_dir/renamed.tar.gz"
-            fi
-            touch "$sol_dir/.can_unpack"
-        fi
-        
-        if [[ -f "$sol_dir/.can_unpack" || ! -z "$CHECK_ALL" ]]; then
-            unpack=$(mktemp -d)
-            mkdir -p "$sol_dir/unpacked"
-            if ! (tar xzf "$sol_dir/renamed.tar.gz" -C "$unpack" 1>"$out" 2>"$err"); then
-                echo "error: unpacking" | tee -a "$log"
-                echo "$name" >>to_check/unpacking-errors.txt
-                rsync "$out" "$sol_dir/unpacking.out"
-                rsync "$err" "$sol_dir/unpacking.err"
-            else
-                if ! [[ -d "$sol_dir/unpacked" ]]; then
-                    rsync -r "$unpack/" "$sol_dir/unpacked"
-                fi
-                touch "$sol_dir/.can_compile"
-            fi
+
+    mkdir -p "$sol_dir"
+
+    if [[ (! $(completed "assemble"; echo $?) -eq 0 || ! -z "$RECHECK") && -z "$ONLY_TEST" ]]; then
+        mkdir -p "$sol_dir/name_check/input"
+        if [[ ! -f "$sol_dir/name_check/input/$name" ]]; then
+            rsync -r "$solution" "$sol_dir/name_check/input"
         fi
 
-        if [[ -f "$sol_dir/.can_compile" || ! -z "$CHECK_ALL" ]]; then
-            if ! [[ -d "$sol_dir/compile" ]]; then
-                rsync -r "$sol_dir/unpacked/" "$sol_dir/compile"
-                rsync Validate.java "$sol_dir/compile"
-            fi
-
-            if ! (cd "$sol_dir/compile" && javac -Xlint -Werror Validate.java 1>"$out" 2>"$err"); then
-                echo "error: compiling Validate" | tee -a "$log"
-                echo "$name" >>to_check/compile-errors.txt
-                rsync "$out" "$sol_dir/compile.out"
-                rsync "$err" "$sol_dir/compile.err"
-            else
-                if ! [[ -d "$sol_dir/validate" ]]; then
-                    rsync -r "$sol_dir/compile/" "$sol_dir/validate"
+        rm -f "$sol_dir/errors.txt"
+        if exec_pass "name_check" "invalid name"; then
+            copy_from "name_check" "unpacking"
+            if exec_pass "unpacking" "unpacking error"; then
+                copy_from "unpacking" "val_compile"
+                if exec_pass "val_compile" "compiling Validate"; then
+                    copy_from "val_compile" "validate"
+                    if exec_pass "validate" "running Validate"; then
+                        copy_from "validate" "assemble"
+                        exec_pass "assemble" "assembling tests"
+                    fi
                 fi
-                touch "$sol_dir/.can_validate"
-            fi
-        fi
-
-        if [[ -f "$sol_dir/.can_validate" || ! -z "$CHECK_ALL" ]]; then
-            if ! [[ -d "$sol_dir/validate" ]]; then
-                rsync -r "$sol_dir/compile/" "$sol_dir/validate"
-            fi
-            if ! [[ -f "$sol_dir/validate/Validate.class" ]]; then
-                rsync Validate.java "$sol_dir/validate"
-                (cd "$sol_dir/validate" && javac -Xlint -Werror Validate.java )
-            fi
-
-            if ! (cd "$sol_dir/validate" && java Validate 1>"$out" 2>"$err"); then
-                echo "error: running Validate" | tee -a "$log"
-                echo "$name" >>to_check/validate-errors.txt
-                rsync "$out" "$sol_dir/validate.out"
-                rsync "$err" "$sol_dir/validate.err"
-            else
-                if ! [[ -d "$sol_dir/test_compile" ]]; then
-                    rsync -r "$sol_dir/validate/" "$sol_dir/test_compile"
-                fi
-                touch "$sol_dir/.can_compile_tests"
-            fi
-        fi
-
-        if [[ -f "$sol_dir/.can_compile_tests" || ! -z "$CHECK_ALL" ]]; then
-            rm -rf src/main/java/
-            rsync -r "$sol_dir/test_compile/" src/main/java
-            rm -f src/main/java/concurrentcube/CubeTest.java
-
-            if ! (./gradlew clean assemble 1>"$out" 2>"$err"); then
-                echo "error: compiling tests" | tee -a "$log"
-                echo "$name" >>to_check/compiling-tests.txt
-                rsync "$out" "$sol_dir/compile-tests.out"
-                rsync "$err" "$sol_dir/compile-tests.err"
-            else
-                if ! [[ -d "$sol_dir/test" ]]; then
-                    rsync -r "$sol_dir/test_compile/" "$sol_dir/test"
-                fi
-                touch "$sol_dir/.can_test"
             fi
         fi
     fi
 
-    if [[ -f "$sol_dir/.can_test" && ! -f "$sol_dir/.tested" && -z "$ONLY_VALIDATE" ]]; then
-        rm -rf "$sol_dir/html"
-
-        rm -rf src/main/java/
-        rsync -r "$sol_dir/test/" src/main/java
-        rm -f src/main/java/concurrentcube/CubeTest.java
-
-        ./gradlew clean assemble 1>"$out" 2>"$err"
-        ./gradlew test 1>"$out" 2>"$err"
-        rsync "$out" "$sol_dir/test-results.out"
-        rsync "$err" "$sol_dir/test-results.err"
-        rsync -r build/reports/tests/test/ "$sol_dir/html"
-        rsync -r build/test-results/test/ "$sol_dir/xml"
-        python3 compose_report.py "$name" >"$sol_dir/report.md"
-        touch "$sol_dir/.tested"
+    if ! completed "assemble"; then
+        touch errors/not_to_test.txt
+        echo "$name" >>errors/not_to_test.txt
+    elif [[ (! -f "$sol_dir/perform_tests/.passed" || ! -z "$RETEST") && -z "$ONLY_VALIDATE" ]]; then
+        copy_from "assemble" "perform_tests"
+        exec_pass "perform_tests" "performing tests"
     fi
 done

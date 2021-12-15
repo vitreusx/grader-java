@@ -10,3 +10,5 @@ log
 build
 *.class
 src/main
+validated
+*.log
