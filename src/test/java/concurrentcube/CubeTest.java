@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final long multiplier = 20;
+    private static final long multiplier = 1;
     private static final long taskEntryLag = 50*multiplier;
     private static final long taskExecTime = 250*multiplier;
     private static final long interruptLag = 50*multiplier;
@@ -42,6 +42,11 @@ class CubeTest {
 
     static void waitForThreadJoin(Thread t, String message) throws InterruptedException {
         t.join(taskExecTime);
+        assertFalse(t.isAlive(), message);
+    }
+
+    static void waitForThreadJoinEx(Thread t, long time, String message) throws InterruptedException {
+        t.join(time);
         assertFalse(t.isAlive(), message);
     }
 
@@ -129,6 +134,7 @@ class CubeTest {
             stillRunning.set(false);
             for (Thread thread: threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
+                if (thread.isAlive()) break;
             }
 
             testMode.set(false);
@@ -230,6 +236,7 @@ class CubeTest {
             stillRunning.set(false);
             for (Thread thread: threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
+                if (thread.isAlive()) break;
             }
 
             testMode.set(false);
@@ -245,7 +252,7 @@ class CubeTest {
             testTemplate(1);
         }
 
-        @Test
+        @RepeatedTest(32)
         @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
@@ -339,7 +346,7 @@ class CubeTest {
                     "The state doesn't match the reference implementation.");
         }
 
-        @Test
+        @RepeatedTest(32)
         @DisplayName("Testing whether the interruptions actually end the threads.")
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop, and
@@ -423,7 +430,7 @@ class CubeTest {
     @Nested
     @DisplayName("Tests for the behaviour of interruptions and waiting at locks.")
     class InterruptingWaitingTests {
-        @Test
+        @RepeatedTest(16)
         @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
         void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
             // We test it in a following fashion: we have two threads ("active" and "waiting"), we start the "active" one
@@ -931,8 +938,6 @@ class CubeTest {
 
             Thread.sleep(sampleTime);
 
-            CyclicBarrier barrier = new CyclicBarrier(6*size+2);
-
             List<Thread> lateThreads = new ArrayList<>();
             for (int side = 0; side < 6; ++side) {
                 for (int layer = 0; layer < size; ++layer) {
@@ -942,12 +947,10 @@ class CubeTest {
                     lateThreads.add(new Thread(() -> {
                         try {
                             cube.rotate(finalSide, finalLayer);
-                            barrier.await();
                         }
                         catch (InterruptedException e) {
                             hasThrown.set(true);
                         }
-                        catch (BrokenBarrierException ignored) {}
                     }));
                 }
             }
@@ -956,24 +959,26 @@ class CubeTest {
                     String state = cube.show();
                     if (!refShow.get().equals(state))
                         statesEqual.set(false);
-                    barrier.await();
                 }
                 catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
-                catch (BrokenBarrierException ignored) {}
             }));
 
             for (Thread t: lateThreads) {
                 t.start();
             }
 
-
-            waitForThreadAtABarrier(barrier, 2 * taskExecTime * lateThreads.size());
+            long timeout = 4 * taskExecTime * lateThreads.size();
+            for (Thread thread: lateThreads) {
+                waitForThreadJoinEx(thread, timeout, "A late thread got stuck.");
+                if (thread.isAlive()) break;
+            }
 
             stillRunning.set(false);
             for (Thread thread: fillerThreads) {
-                waitForThreadJoin(thread, "The filler thread stuck at execution");
+                waitForThreadJoin(thread, "A filler thread got stuck.");
+                if (thread.isAlive()) break;
             }
 
             testMode.set(false);
