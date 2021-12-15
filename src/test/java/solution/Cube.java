@@ -47,7 +47,7 @@ public class Cube {
         }
     }
 
-    public void rotate(int sideIndex, int layer) throws InterruptedException {
+    public void rotate(int sideIndex, int layer) {
         Side side = Side.values()[sideIndex];
 
         Axis sideAxis = side.axis();
@@ -74,19 +74,19 @@ public class Cube {
         ReentrantReadWriteLock.WriteLock showWriteLock = showLock.writeLock();
 
         try {
-            acquisitionLock.lockInterruptibly();
+            acquisitionLock.lock();
 
-            sideAxisLock.lockInterruptibly();
+            sideAxisLock.lock();
             sideAxisLockHeld = true;
 
-            layerLock.lockInterruptibly();
+            layerLock.lock();
 
             for (ReentrantReadWriteLock.WriteLock otherAxisLock: otherAxesLocks) {
                 otherAxisLock.lock();
                 otherAxisLock.unlock();
             }
 
-            showWriteLock.lockInterruptibly();
+            showWriteLock.lock();
             showWriteLock.unlock();
 
             acquisitionLock.unlock();
@@ -153,7 +153,7 @@ public class Cube {
         }
     }
 
-    public String show() throws InterruptedException {
+    public String show() {
         List<ReentrantReadWriteLock.WriteLock> allAxesLocks = new ArrayList<>();
         for (Axis axis: Axis.values()) {
             allAxesLocks.add(axisLocks.get(axis).writeLock());
@@ -164,13 +164,13 @@ public class Cube {
 
         String stateStr;
         try {
-            acquisitionLock.lockInterruptibly();
+            acquisitionLock.lock();
 
-            showReadLock.lockInterruptibly();
+            showReadLock.lock();
             showReadLockHeld = true;
 
             for (ReentrantReadWriteLock.WriteLock axisLock: allAxesLocks) {
-                axisLock.lockInterruptibly();
+                axisLock.lock();
                 axisLock.unlock();
             }
 

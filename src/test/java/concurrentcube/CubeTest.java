@@ -45,75 +45,6 @@ class CubeTest {
         assertFalse(t.isAlive(), message);
     }
 
-    // A class for storing the sequence of actions over the cube, as well
-    // as verifying whether the execution matches that of the reference
-    // implementation executed sequentially.
-    static class History {
-        public List<Object> operations;
-
-        public History() {
-            operations = new ArrayList<>();
-        }
-
-        public RotateOp addRotateOp(int side, int layer) {
-            RotateOp rotateOp = new RotateOp(side, layer);
-            operations.add(rotateOp);
-            return rotateOp;
-        }
-
-        public ShowOp addShowOp() {
-            // We use a null, because we will fill it in later on.
-            ShowOp showOp = new ShowOp(null);
-            operations.add(showOp);
-            return showOp;
-        }
-
-        public boolean validate(int size, Cube cube) {
-            try {
-                AtomicReference<String> finalState = new AtomicReference<>("");
-                Thread t = new Thread(() -> {
-                    try {
-                        finalState.set(cube.show());
-                    }
-                    catch (InterruptedException ignored) {}
-                });
-
-                t.start();
-                waitForThreadJoin(t, "Could not get the final state in the validation procedure.");
-
-                solution.Cube refCube = new solution.Cube(
-                        size,
-                        (side, layer) -> {},
-                        (side, layer) -> {},
-                        () -> {},
-                        () -> {});
-
-                int counter = 0;
-                for (Object op: operations) {
-                    if (op instanceof RotateOp) {
-                        RotateOp rotateOp = (RotateOp) op;
-                        refCube.rotate(rotateOp.side, rotateOp.layer);
-                    }
-                    else if (op instanceof ShowOp) {
-                        ShowOp showOp = (ShowOp) op;
-                        String state = refCube.show();
-                        if (showOp.state != null && !showOp.state.equals(state)) {
-                            return false;
-                        }
-                    }
-                    ++counter;
-                }
-
-                String finalRefState = refCube.show();
-                return finalState.get().equals(finalRefState);
-            }
-            catch (InterruptedException e) {
-                // This code is never reached, but we need to shut up the compiler.
-                return false;
-            }
-        }
-    }
-
     static void waitForThreadAtABarrier(CyclicBarrier barrier, long timeout) {
         try {
             barrier.await(timeout, TimeUnit.MILLISECONDS);
@@ -141,7 +72,7 @@ class CubeTest {
             // wait a while to accumulate them, and in the end validate the state.
             int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
 
             // We use a flag here, so that in case we call cube methods after the experiment
             // (say, in the validate function above), we don't do anything.
@@ -150,8 +81,8 @@ class CubeTest {
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
                     // Synchronized is here, because (1) we use lists, (2) just in case memory consistency breaks down.
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
                 }
             };
@@ -203,8 +134,7 @@ class CubeTest {
             testMode.set(false);
             assertFalse(hasThrown.get(),
                     "Methods returned InterruptedException spuriously.");
-            assertTrue(history.validate(size, cube),
-                    "The state doesn't match the reference implementation.");
+            assertEquals(ref.show(), cube.show(), "The state doesn't match the reference implementation.");
         }
 
         @Test
@@ -227,7 +157,9 @@ class CubeTest {
             // This is pretty much the same test, but now we also do show calls.
             int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             // In order to handle recording the show operations, we need to do something as follows:
             // 1. Add the rotate op with null state within "beforeRotation".
@@ -239,8 +171,8 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
                 }
             };
@@ -248,8 +180,8 @@ class CubeTest {
             };
             Runnable beforeShowing = () -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
+                    synchronized (ref) {
+                        refShow.set(ref.show());
                     }
                 }
             };
@@ -274,8 +206,8 @@ class CubeTest {
                         }
                         else {
                             String state = cube.show();
-                            // Fill the incomplete rotate op.
-                            showOpRef.get().state = state;
+                            if (!refShow.get().equals(state))
+                                statesEqual.set(false);
                         }
                     }
                 }
@@ -303,7 +235,7 @@ class CubeTest {
             testMode.set(false);
             assertFalse(hasThrown.get(),
                     "Methods returned InterruptedException spuriously.");
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
 
@@ -329,9 +261,11 @@ class CubeTest {
             // The scenario here is fairly simple: we do stuff as in the previous test, but the main thread
             // will randomly interrupt threads for some time. The interrupted threads will continue working looping
             // so that we interrupt enough of them.
-            int size = 8;
+            int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean stillRunning = new AtomicBoolean(true);
@@ -339,18 +273,14 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
-                    }
+                    ref.rotate(side, layer);
                 }
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
             };
             Runnable beforeShowing = () -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
-                    }
+                    refShow.set(ref.show());
                 }
             };
             Runnable afterShowing = () -> {
@@ -372,7 +302,8 @@ class CubeTest {
                         }
                         else {
                             String state = cube.show();
-                            showOpRef.get().state = state;
+                            if (!refShow.get().equals(state))
+                                statesEqual.set(false);
                         }
                     }
                     catch (InterruptedException ignored) {}
@@ -395,7 +326,6 @@ class CubeTest {
             while (System.nanoTime() - start < testDurationNs) {
                 int threadIndex = random.nextInt(numThreads);
                 threadList.get(threadIndex).interrupt();
-                Thread.sleep(1);
             }
 
             stillRunning.set(false);
@@ -404,7 +334,7 @@ class CubeTest {
             }
 
             testMode.set(false);
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
 
@@ -414,27 +344,25 @@ class CubeTest {
             // The way we test this is as follows: the worker threads run an infinite loop, and
             // the only way out is via the InterruptedException catch. Then, we interrupt every thread and check
             // if, after a while, all of them are not alive.
-            int size = 8;
+            int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean testMode = new AtomicBoolean(true);
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
-                    }
+                    ref.rotate(side, layer);
                 }
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
             };
             Runnable beforeShowing = () -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
-                    }
+                    refShow.set(ref.show());
                 }
             };
             Runnable afterShowing = () -> {
@@ -456,7 +384,8 @@ class CubeTest {
                         }
                         else {
                             String state = cube.show();
-                            showOpRef.get().state = state;
+                            if (!refShow.get().equals(state))
+                                statesEqual.set(false);
                         }
                     }
                 }
@@ -485,7 +414,7 @@ class CubeTest {
 
             testMode.set(false);
 
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
     }
@@ -502,9 +431,11 @@ class CubeTest {
             // we're reasonably sure they're waiting at the locks, and interrupt it. The catch block contains a barrier,
             // and we wait at it in the main thread for a reasonable time (100ms) to check whether it has arrived there.
             // We repeat this for both show task and the rotate task waiting.
-            int size = 8;
+            int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean testMode = new AtomicBoolean(true);
@@ -514,8 +445,8 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
                 }
             };
@@ -526,10 +457,8 @@ class CubeTest {
                 }
             };
             Runnable beforeShowing = () -> {
-                if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
-                    }
+                synchronized (ref) {
+                    refShow.set(ref.show());
                 }
             };
             Runnable afterShowing = () -> {
@@ -557,7 +486,8 @@ class CubeTest {
             Runnable showTask = () -> {
                 try {
                     String state = cube.show();
-                    showOpRef.get().state = state;
+                    if (!refShow.get().equals(state))
+                        statesEqual.set(false);
                 }
                 catch (InterruptedException ignored) {
                     stallOnABarrier(waitingShowThreadInterrupted);
@@ -592,7 +522,7 @@ class CubeTest {
             waitForThreadJoin(waitingShowThread, "The waiting show thread got stuck.");
 
             testMode.set(false);
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
     }
@@ -610,7 +540,10 @@ class CubeTest {
             // and afterX callbacks, and after starting the threads wait at the barrier in the main threads for some
             // reasonable time. If it times out, not all the threads have arrived at the barriers, so they weren't
             // executing in parallel. We do this for both the beforeX barrier and the afterX barrier.
-            History history = new History();
+
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean testMode = new AtomicBoolean(true);
@@ -619,8 +552,8 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
                     stallOnABarrier(parallelThreadsBarrier);
                 }
@@ -632,8 +565,8 @@ class CubeTest {
             };
             Runnable beforeShowing = () -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
+                    synchronized (ref) {
+                        refShow.set(ref.show());
                     }
                     stallOnABarrier(parallelThreadsBarrier);
                 }
@@ -652,7 +585,8 @@ class CubeTest {
                 String result = task1.apply(cube);
                 if (result != null) {
                     // task1 is a show(), so we proceed as usual with show calls
-                    showOpRef.get().state = result;
+                    if (!refShow.get().equals(result))
+                        statesEqual.set(false);
                 }
             });
 
@@ -660,7 +594,8 @@ class CubeTest {
                 String result = task2.apply(cube);
                 if (result != null) {
                     // task2 is a show(), so we proceed as usual with show calls
-                    showOpRef.get().state = result;
+                    if (!refShow.get().equals(result))
+                        statesEqual.set(false);
                 }
             });
 
@@ -679,7 +614,7 @@ class CubeTest {
             waitForThreadJoin(thread2, "The thread got stuck.");
 
             testMode.set(false);
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
 
@@ -738,7 +673,10 @@ class CubeTest {
             // ("active" and "waiting"), starting the active one and ensuring that it has reached the beforeX callback,
             // and then starting the waiting one and ensuring that it has *not* reached the afterX callback (by waiting
             // at a barrier for 100ms).
-            History history = new History();
+
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
 
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean testMode = new AtomicBoolean(true);
@@ -751,8 +689,8 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
 
                     // The first thread entering will have isActive set to true, the other to false.
@@ -776,8 +714,8 @@ class CubeTest {
             };
             Runnable beforeShowing = () -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
+                    synchronized (ref) {
+                        refShow.set(ref.show());
                     }
 
                     if (activeThread.get()) {
@@ -806,14 +744,16 @@ class CubeTest {
             Thread thread1 = new Thread(() -> {
                 String result = task1.apply(cube);
                 if (result != null) {
-                    showOpRef.get().state = result;
+                    if (!refShow.get().equals(result))
+                        statesEqual.set(false);
                 }
             });
 
             Thread thread2 = new Thread(() -> {
                 String result = task2.apply(cube);
                 if (result != null) {
-                    showOpRef.get().state = result;
+                    if (!refShow.get().equals(result))
+                        statesEqual.set(false);
                 }
             });
 
@@ -832,7 +772,7 @@ class CubeTest {
             waitForThreadJoin(thread2, "The thread got stuck.");
 
             testMode.set(false);
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
 
@@ -901,25 +841,26 @@ class CubeTest {
             // thread and check if it can complete it in reasonable time (100ms here).
             int size = 3;
 
-            History history = new History();
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            ThreadLocal<String> refShow = new ThreadLocal<>();
+            AtomicBoolean statesEqual = new AtomicBoolean(true);
+
             ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean stillRunning = new AtomicBoolean(true);
             AtomicBoolean testMode = new AtomicBoolean(true);
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    synchronized (history) {
-                        history.addRotateOp(side, layer);
+                    synchronized (ref) {
+                        ref.rotate(side, layer);
                     }
                 }
             };
             BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
             };
             Runnable beforeShowing = () -> {
-                if (testMode.get()) {
-                    synchronized (history) {
-                        showOpRef.set(history.addShowOp());
-                    }
+                synchronized (ref) {
+                    refShow.set(ref.show());
                 }
             };
             Runnable afterShowing = () -> {
@@ -974,7 +915,8 @@ class CubeTest {
                 try {
                     while (stillRunning.get()) {
                         String state = cube.show();
-                        showOpRef.get().state = state;
+                        if (!refShow.get().equals(state))
+                            statesEqual.set(false);
                     }
                 }
                 catch (InterruptedException e) {
@@ -1011,7 +953,8 @@ class CubeTest {
             lateThreads.add(new Thread(() -> {
                 try {
                     String state = cube.show();
-                    showOpRef.get().state = state;
+                    if (!refShow.get().equals(state))
+                        statesEqual.set(false);
                     barrier.await();
                 }
                 catch (InterruptedException e) {
@@ -1035,7 +978,7 @@ class CubeTest {
             testMode.set(false);
             assertFalse(hasThrown.get(),
                     "Methods returned InterruptedException spuriously.");
-            assertTrue(history.validate(size, cube),
+            assertTrue(statesEqual.get() && ref.show().equals(cube.show()),
                     "The state doesn't match the reference implementation.");
         }
     }
