@@ -331,6 +331,7 @@ class CubeTest {
             stillRunning.set(false);
             for (Thread thread: threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
+                if (thread.isAlive()) break;
             }
 
             testMode.set(false);
