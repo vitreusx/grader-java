@@ -252,7 +252,7 @@ class CubeTest {
             testTemplate(1);
         }
 
-        @RepeatedTest(32)
+        @RepeatedTest(16)
         @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
             testTemplate(2*Runtime.getRuntime().availableProcessors());
@@ -346,7 +346,7 @@ class CubeTest {
                     "The state doesn't match the reference implementation.");
         }
 
-        @RepeatedTest(32)
+        @RepeatedTest(16)
         @DisplayName("Testing whether the interruptions actually end the threads.")
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop, and
