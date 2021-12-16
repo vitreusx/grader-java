@@ -80,7 +80,7 @@ perform_tests() {
     rsync -r "$input_dir/" src/main/java
     rm -rf src/main/java/concurrentcube/CubeTest.java
     
-    timeout --foreground --verbose --signal=SIGINT 240 ./gradlew clean test 1>$stdout 2>$stderr
+    timeout --foreground --verbose --signal=SIGINT 60 ./gradlew clean test 1>$stdout 2>$stderr
     STATUS=$?
     if [[ "$STATUS" -eq "124" ]]; then
         return 1

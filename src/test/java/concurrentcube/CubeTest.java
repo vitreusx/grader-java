@@ -17,11 +17,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class CubeTest {
     private static final double showProbability = 0.2;
     private static final long multiplier = 1;
-    private static final long taskEntryLag = 50*multiplier;
-    private static final long taskExecTime = 250*multiplier;
-    private static final long interruptLag = 50*multiplier;
+    private static final long taskEntryLag = 50 * multiplier;
+    private static final long taskExecTime = 250 * multiplier;
+    private static final long interruptLag = 50 * multiplier;
     private static final long sampleTime = 500;
-    
+
     static class RotateOp {
         public int side;
         public int layer;
@@ -53,11 +53,9 @@ class CubeTest {
     static void waitForThreadAtABarrier(CyclicBarrier barrier, long timeout) {
         try {
             barrier.await(timeout, TimeUnit.MILLISECONDS);
-        }
-        catch (InterruptedException | BrokenBarrierException ignored) {
+        } catch (InterruptedException | BrokenBarrierException ignored) {
             // Never happens (?)
-        }
-        catch (TimeoutException ignored) {
+        } catch (TimeoutException ignored) {
             fail("Waited too long for a thread at a barrier");
         }
     }
@@ -65,8 +63,8 @@ class CubeTest {
     static void stallOnABarrier(CyclicBarrier barrier) {
         try {
             barrier.await();
+        } catch (InterruptedException | BrokenBarrierException ignored) {
         }
-        catch (InterruptedException | BrokenBarrierException ignored) {}
     }
 
     @Nested
@@ -77,7 +75,11 @@ class CubeTest {
             // wait a while to accumulate them, and in the end validate the state.
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
 
             // We use a flag here, so that in case we call cube methods after the experiment
             // (say, in the validate function above), we don't do anything.
@@ -85,15 +87,19 @@ class CubeTest {
 
             BiConsumer<Integer, Integer> beforeRotation = (side, layer) -> {
                 if (testMode.get()) {
-                    // Synchronized is here, because (1) we use lists, (2) just in case memory consistency breaks down.
+                    // Synchronized is here, because (1) we use lists, (2) just in case memory
+                    // consistency breaks down.
                     synchronized (ref) {
                         ref.rotate(side, layer);
                     }
                 }
             };
-            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {};
-            Runnable beforeShowing = () -> {};
-            Runnable afterShowing = () -> {};
+            BiConsumer<Integer, Integer> afterRotation = (side, layer) -> {
+            };
+            Runnable beforeShowing = () -> {
+            };
+            Runnable afterShowing = () -> {
+            };
 
             Cube cube = new Cube(size,
                     beforeRotation, afterRotation,
@@ -114,8 +120,7 @@ class CubeTest {
                         int layer = random.nextInt(size);
                         cube.rotate(side, layer);
                     }
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
             };
@@ -125,16 +130,17 @@ class CubeTest {
                 threadList.add(new Thread(workerFn));
             }
 
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 thread.start();
             }
 
             Thread.sleep(sampleTime);
 
             stillRunning.set(false);
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             testMode.set(false);
@@ -152,7 +158,7 @@ class CubeTest {
         @Test
         @DisplayName("Testing correctness of concurrent rotate operations.")
         void testCorrectnessOfRunningRotate() throws InterruptedException {
-            testTemplate(2*Runtime.getRuntime().availableProcessors());
+            testTemplate(2 * Runtime.getRuntime().availableProcessors());
         }
     }
 
@@ -163,11 +169,16 @@ class CubeTest {
             // This is pretty much the same test, but now we also do show calls.
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
-            // In order to handle recording the show operations, we need to do something as follows:
+            // In order to handle recording the show operations, we need to do something as
+            // follows:
             // 1. Add the rotate op with null state within "beforeRotation".
             // 2. Once we exit the show call and get the state, we fill it in.
             // We use showOpRef for holding the incomplete rotate op added to the history.
@@ -209,15 +220,13 @@ class CubeTest {
                             int side = random.nextInt(6);
                             int layer = random.nextInt(size);
                             cube.rotate(side, layer);
-                        }
-                        else {
+                        } else {
                             String state = cube.show();
                             if (!refShow.get().equals(state))
                                 statesEqual.set(false);
                         }
                     }
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
             };
@@ -227,16 +236,17 @@ class CubeTest {
                 threadList.add(new Thread(workerFn));
             }
 
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 thread.start();
             }
 
             Thread.sleep(sampleTime);
 
             stillRunning.set(false);
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             testMode.set(false);
@@ -255,7 +265,7 @@ class CubeTest {
         @RepeatedTest(16)
         @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
-            testTemplate(2*Runtime.getRuntime().availableProcessors());
+            testTemplate(2 * Runtime.getRuntime().availableProcessors());
         }
     }
 
@@ -265,12 +275,18 @@ class CubeTest {
         @Test
         @DisplayName("Simply testing integrity of the cube state.")
         void testIntegrity() throws InterruptedException {
-            // The scenario here is fairly simple: we do stuff as in the previous test, but the main thread
-            // will randomly interrupt threads for some time. The interrupted threads will continue working looping
+            // The scenario here is fairly simple: we do stuff as in the previous test, but
+            // the main thread
+            // will randomly interrupt threads for some time. The interrupted threads will
+            // continue working looping
             // so that we interrupt enough of them.
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -306,28 +322,27 @@ class CubeTest {
                             int side = random.nextInt(6);
                             int layer = random.nextInt(size);
                             cube.rotate(side, layer);
-                        }
-                        else {
+                        } else {
                             String state = cube.show();
                             if (!refShow.get().equals(state))
                                 statesEqual.set(false);
                         }
+                    } catch (InterruptedException ignored) {
                     }
-                    catch (InterruptedException ignored) {}
                 }
             };
 
             List<Thread> threadList = new ArrayList<>();
-            int numThreads = 2*Runtime.getRuntime().availableProcessors();
+            int numThreads = 2 * Runtime.getRuntime().availableProcessors();
             for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
                 threadList.add(new Thread(workerFn));
             }
 
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 thread.start();
             }
 
-            long testDurationNs = (long)(sampleTime * 1e6);
+            long testDurationNs = (long) (sampleTime * 1e6);
             Random random = new Random();
             long start = System.nanoTime();
             while (System.nanoTime() - start < testDurationNs) {
@@ -336,9 +351,10 @@ class CubeTest {
             }
 
             stillRunning.set(false);
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 waitForThreadJoin(thread, "The thread got stuck.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             testMode.set(false);
@@ -349,12 +365,18 @@ class CubeTest {
         @RepeatedTest(16)
         @DisplayName("Testing whether the interruptions actually end the threads.")
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
-            // The way we test this is as follows: the worker threads run an infinite loop, and
-            // the only way out is via the InterruptedException catch. Then, we interrupt every thread and check
+            // The way we test this is as follows: the worker threads run an infinite loop,
+            // and
+            // the only way out is via the InterruptedException catch. Then, we interrupt
+            // every thread and check
             // if, after a while, all of them are not alive.
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -389,35 +411,35 @@ class CubeTest {
                             int side = random.nextInt(6);
                             int layer = random.nextInt(size);
                             cube.rotate(side, layer);
-                        }
-                        else {
+                        } else {
                             String state = cube.show();
                             if (!refShow.get().equals(state))
                                 statesEqual.set(false);
                         }
                     }
+                } catch (InterruptedException ignored) {
                 }
-                catch (InterruptedException ignored) {}
             };
 
             List<Thread> threadList = new ArrayList<>();
-            int numThreads = 2*Runtime.getRuntime().availableProcessors();
+            int numThreads = 2 * Runtime.getRuntime().availableProcessors();
             for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
                 threadList.add(new Thread(workerFn));
             }
 
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 thread.start();
             }
 
             Thread.sleep(sampleTime);
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 thread.interrupt();
             }
 
-            for (Thread thread: threadList) {
+            for (Thread thread : threadList) {
                 waitForThreadJoin(thread, "Thread, which was interrupted, has not stopped execution.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             testMode.set(false);
@@ -433,15 +455,24 @@ class CubeTest {
         @RepeatedTest(16)
         @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
         void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
-            // We test it in a following fashion: we have two threads ("active" and "waiting"), we start the "active" one
-            // and ensure it's at the afterRotation/afterShowing call. Then, we have it wait at a second barrier, at which
-            // it will wait until we're done testing. We then launch the "waiting" thread, wait a bit (50ms here) until
-            // we're reasonably sure they're waiting at the locks, and interrupt it. The catch block contains a barrier,
-            // and we wait at it in the main thread for a reasonable time (100ms) to check whether it has arrived there.
+            // We test it in a following fashion: we have two threads ("active" and
+            // "waiting"), we start the "active" one
+            // and ensure it's at the afterRotation/afterShowing call. Then, we have it wait
+            // at a second barrier, at which
+            // it will wait until we're done testing. We then launch the "waiting" thread,
+            // wait a bit (50ms here) until
+            // we're reasonably sure they're waiting at the locks, and interrupt it. The
+            // catch block contains a barrier,
+            // and we wait at it in the main thread for a reasonable time (100ms) to check
+            // whether it has arrived there.
             // We repeat this for both show task and the rotate task waiting.
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -484,8 +515,7 @@ class CubeTest {
             Runnable rotateTask = () -> {
                 try {
                     cube.rotate(0, 0);
-                }
-                catch (InterruptedException ignored) {
+                } catch (InterruptedException ignored) {
                     stallOnABarrier(waitingRotateThreadInterrupted);
                 }
             };
@@ -496,8 +526,7 @@ class CubeTest {
                     String state = cube.show();
                     if (!refShow.get().equals(state))
                         statesEqual.set(false);
-                }
-                catch (InterruptedException ignored) {
+                } catch (InterruptedException ignored) {
                     stallOnABarrier(waitingShowThreadInterrupted);
                 }
             };
@@ -538,18 +567,30 @@ class CubeTest {
     @Nested
     @DisplayName("Tests of the parallel execution of non-conflicting operations.")
     class ParallelExecutionTests {
-        // This is an unified template for running the tasks. The "Function<Cube, String>" is sort-of a fused
-        // version of both show and rotate: the rotate task will return null, which we will detect so that we can
-        // set the state string to the appropriate value in showOp in the history validation part of the code.
+        // This is an unified template for running the tasks. The "Function<Cube,
+        // String>" is sort-of a fused
+        // version of both show and rotate: the rotate task will return null, which we
+        // will detect so that we can
+        // set the state string to the appropriate value in showOp in the history
+        // validation part of the code.
         void testTemplate(int size, Function<Cube, String> task1, Function<Cube, String> task2)
                 throws InterruptedException {
-            // In order to check whether the execution is parallel, we set up a barrier with threshold of 3,
-            // and start two threads with non-conflicting actions. We let threads wait at the barrier in both beforeX
-            // and afterX callbacks, and after starting the threads wait at the barrier in the main threads for some
-            // reasonable time. If it times out, not all the threads have arrived at the barriers, so they weren't
-            // executing in parallel. We do this for both the beforeX barrier and the afterX barrier.
+            // In order to check whether the execution is parallel, we set up a barrier with
+            // threshold of 3,
+            // and start two threads with non-conflicting actions. We let threads wait at
+            // the barrier in both beforeX
+            // and afterX callbacks, and after starting the threads wait at the barrier in
+            // the main threads for some
+            // reasonable time. If it times out, not all the threads have arrived at the
+            // barriers, so they weren't
+            // executing in parallel. We do this for both the beforeX barrier and the afterX
+            // barrier.
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -611,11 +652,11 @@ class CubeTest {
             thread2.start();
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(2*taskExecTime, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(2 * taskExecTime, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the beforeX callback.");
 
             assertDoesNotThrow(() -> {
-                parallelThreadsBarrier.await(2*taskExecTime, TimeUnit.MILLISECONDS);
+                parallelThreadsBarrier.await(2 * taskExecTime, TimeUnit.MILLISECONDS);
             }, "Both of the threads have not reached the afterX callback.");
 
             waitForThreadJoin(thread1, "The thread got stuck.");
@@ -630,8 +671,7 @@ class CubeTest {
             return (cube) -> {
                 try {
                     return cube.show();
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     // This code shouldn't be ever reached.
                     return "";
                 }
@@ -643,8 +683,7 @@ class CubeTest {
                 try {
                     cube.rotate(side, layer);
                     return null;
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     // This code shouldn't be ever reached.
                     return null;
                 }
@@ -677,12 +716,19 @@ class CubeTest {
     class SequentialityTests {
         void testTemplate(int size, Function<Cube, String> task1, Function<Cube, String> task2)
                 throws InterruptedException {
-            // We ensure that the conflicting operations are executed sequentially by running two threads
-            // ("active" and "waiting"), starting the active one and ensuring that it has reached the beforeX callback,
-            // and then starting the waiting one and ensuring that it has *not* reached the afterX callback (by waiting
+            // We ensure that the conflicting operations are executed sequentially by
+            // running two threads
+            // ("active" and "waiting"), starting the active one and ensuring that it has
+            // reached the beforeX callback,
+            // and then starting the waiting one and ensuring that it has *not* reached the
+            // afterX callback (by waiting
             // at a barrier for 100ms).
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -705,8 +751,7 @@ class CubeTest {
                     if (activeThread.get()) {
                         activeThread.set(false);
                         isActive.set(true);
-                    }
-                    else {
+                    } else {
                         isActive.set(false);
                         stallOnABarrier(waitingThreadEntry);
                     }
@@ -729,8 +774,7 @@ class CubeTest {
                     if (activeThread.get()) {
                         activeThread.set(false);
                         isActive.set(true);
-                    }
-                    else {
+                    } else {
                         isActive.set(false);
                         stallOnABarrier(waitingThreadEntry);
                     }
@@ -788,8 +832,7 @@ class CubeTest {
             return (cube) -> {
                 try {
                     return cube.show();
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     return "";
                 }
             };
@@ -800,8 +843,7 @@ class CubeTest {
                 try {
                     cube.rotate(side, layer);
                     return null;
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     return null;
                 }
             };
@@ -843,13 +885,20 @@ class CubeTest {
         @Test
         @DisplayName("Testing the liveliness of the implementation.")
         void testLiveliness() throws InterruptedException {
-            // It's impossible to be sure whether a solution satisfied liveliness, but we do something as follows:
-            // first, we launch a "filler" set of threads, which contains multiples of threads running every possible task.
-            // We wait a bit so that the cube is (presumably) always occupied, and then, for each task we launch a new
+            // It's impossible to be sure whether a solution satisfied liveliness, but we do
+            // something as follows:
+            // first, we launch a "filler" set of threads, which contains multiples of
+            // threads running every possible task.
+            // We wait a bit so that the cube is (presumably) always occupied, and then, for
+            // each task we launch a new
             // thread and check if it can complete it in reasonable time (100ms here).
             int size = 3;
 
-            solution.Cube ref = new solution.Cube(size, (x, y) -> {}, (x, y) -> {}, () -> {}, () -> {});
+            solution.Cube ref = new solution.Cube(size, (x, y) -> {
+            }, (x, y) -> {
+            }, () -> {
+            }, () -> {
+            });
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
@@ -879,7 +928,6 @@ class CubeTest {
                     beforeShowing, afterShowing);
 
             AtomicBoolean hasThrown = new AtomicBoolean(false);
-            
 
             Runnable workerFn = () -> {
                 try {
@@ -890,14 +938,12 @@ class CubeTest {
                             int side = random.nextInt(6);
                             int layer = random.nextInt(size);
                             cube.rotate(side, layer);
-                        }
-                        else {
+                        } else {
                             String state = cube.show();
                             showOpRef.get().state = state;
                         }
                     }
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
             };
@@ -912,8 +958,7 @@ class CubeTest {
                             while (stillRunning.get()) {
                                 cube.rotate(finalSide, finalLayer);
                             }
-                        }
-                        catch (InterruptedException e) {
+                        } catch (InterruptedException e) {
                             hasThrown.set(true);
                         }
                     }));
@@ -926,13 +971,12 @@ class CubeTest {
                         if (!refShow.get().equals(state))
                             statesEqual.set(false);
                     }
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
             }));
 
-            for (Thread thread: fillerThreads) {
+            for (Thread thread : fillerThreads) {
                 thread.start();
             }
 
@@ -947,8 +991,7 @@ class CubeTest {
                     lateThreads.add(new Thread(() -> {
                         try {
                             cube.rotate(finalSide, finalLayer);
-                        }
-                        catch (InterruptedException e) {
+                        } catch (InterruptedException e) {
                             hasThrown.set(true);
                         }
                     }));
@@ -959,26 +1002,27 @@ class CubeTest {
                     String state = cube.show();
                     if (!refShow.get().equals(state))
                         statesEqual.set(false);
-                }
-                catch (InterruptedException e) {
+                } catch (InterruptedException e) {
                     hasThrown.set(true);
                 }
             }));
 
-            for (Thread t: lateThreads) {
+            for (Thread t : lateThreads) {
                 t.start();
             }
 
             long timeout = 4 * taskExecTime * lateThreads.size();
-            for (Thread thread: lateThreads) {
+            for (Thread thread : lateThreads) {
                 waitForThreadJoinEx(thread, timeout, "A late thread got stuck.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             stillRunning.set(false);
-            for (Thread thread: fillerThreads) {
+            for (Thread thread : fillerThreads) {
                 waitForThreadJoin(thread, "A filler thread got stuck.");
-                if (thread.isAlive()) break;
+                if (thread.isAlive())
+                    break;
             }
 
             testMode.set(false);
