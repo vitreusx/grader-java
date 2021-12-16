@@ -21,6 +21,7 @@ class CubeTest {
     private static final long taskExecTime = 250 * multiplier;
     private static final long interruptLag = 50 * multiplier;
     private static final long sampleTime = 500;
+    private static final int numRepeats = 8;
 
     static class RotateOp {
         public int side;
@@ -262,7 +263,7 @@ class CubeTest {
             testTemplate(1);
         }
 
-        @RepeatedTest(16)
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
             testTemplate(2 * Runtime.getRuntime().availableProcessors());
@@ -362,7 +363,7 @@ class CubeTest {
                     "The state doesn't match the reference implementation.");
         }
 
-        @RepeatedTest(16)
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing whether the interruptions actually end the threads.")
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop,
@@ -452,7 +453,7 @@ class CubeTest {
     @Nested
     @DisplayName("Tests for the behaviour of interruptions and waiting at locks.")
     class InterruptingWaitingTests {
-        @RepeatedTest(16)
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing whether interruptions interrupt threads waiting at the locks.")
         void testWhetherInterruptionsInterruptWaiting() throws InterruptedException {
             // We test it in a following fashion: we have two threads ("active" and
