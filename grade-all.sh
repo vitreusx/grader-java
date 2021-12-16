@@ -73,6 +73,8 @@ assemble() {
     fi
 }
 
+declare -a test_names=("RotateTests" "CorrectnessOfBoth" "InterruptionCorrectnessTests" "InterruptingWaitingTests" "ParallelExecutionTests" "SequentialityTests" "LivelinessTests")
+
 perform_tests() {
     rm -rf build
     rm -rf src/main/java
@@ -80,19 +82,20 @@ perform_tests() {
     rsync -r "$input_dir/" src/main/java
     rm -rf src/main/java/concurrentcube/CubeTest.java
     
-    timeout --foreground --verbose --signal=SIGINT 60 ./gradlew clean test 1>$stdout 2>$stderr
-    STATUS=$?
-    if [[ "$STATUS" -eq "124" ]]; then
-        return 1
-    else
-        mkdir -p $output_dir
-        rsync $stdout "$output_dir/results.out"
-        rsync $stderr "$output_dir/results.err"
-        rsync -r build/reports/tests/test/ "$output_dir/html"
-        rsync -r build/test-results/test/ "$output_dir/xml"
-        python3 compose_report.py "$output_dir/xml" >"$output_dir/report.md"
-        return 0
+    ./gradle clean
+    for test in $test_names; do
+        timeout --foreground --verbose --signal=SIGINT 60 ./gradlew :test --tests "concurrentcube.CubeTests\$${test}" 1>$stdout 2>$stderr
+        STATUS=$?
+        if [[ ! "$STATUS" -eq "124" ]]; then
+            mkdir -p $output_dir
+            rsync $stdout "$output_dir/$test.out"
+            rsync $stderr "$output_dir/$test.err"
+        fi
     fi
+
+    rsync -r build/reports/tests/test/ "$output_dir/html"
+    rsync -r build/test-results/test/ "$output_dir/xml"
+    python3 compose_report.py "$output_dir/xml" >"$output_dir/report.md"
 }
 
 exec_pass() {
