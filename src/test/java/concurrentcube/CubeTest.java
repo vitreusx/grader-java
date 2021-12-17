@@ -3,10 +3,7 @@ package concurrentcube;
 import org.junit.jupiter.api.*;
 
 import java.util.*;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -17,11 +14,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class CubeTest {
     private static final double showProbability = 0.2;
     private static final long multiplier = 2;
-    private static final long taskEntryLag = 50 * multiplier;
+    private static final long taskEntryLag = 125 * multiplier;
     private static final long taskExecTime = 250 * multiplier;
-    private static final long interruptLag = 50 * multiplier;
-    private static final long sampleTime = 1000;
-    private static final int numRepeats = 64;
+    private static final long interruptLag = 125 * multiplier;
+    private static final long noTimeout = 9999999;
+    private static final long sampleTime = 250;
+    private static final int numRepeats = 16;
     private static final int maxThreads = 16;
 
     static class RotateOp {
@@ -929,25 +927,6 @@ class CubeTest {
 
             AtomicBoolean hasThrown = new AtomicBoolean(false);
 
-            Runnable workerFn = () -> {
-                try {
-                    Random random = new Random();
-
-                    while (stillRunning.get()) {
-                        if (random.nextDouble() > showProbability) {
-                            int side = random.nextInt(6);
-                            int layer = random.nextInt(size);
-                            cube.rotate(side, layer);
-                        } else {
-                            String state = cube.show();
-                            showOpRef.get().state = state;
-                        }
-                    }
-                } catch (InterruptedException e) {
-                    hasThrown.set(true);
-                }
-            };
-
             List<Thread> fillerThreads = new ArrayList<>();
             for (int side = 0; side < 6; ++side) {
                 for (int layer = 0; layer < size; ++layer) {
@@ -984,6 +963,10 @@ class CubeTest {
 
             Thread.sleep(sampleTime);
 
+            int numLateThreads = 6 * size + 1;
+            CyclicBarrier semaphoresAcquiredBarrier = new CyclicBarrier(numLateThreads+1);
+            Semaphore lateThreadSem = new Semaphore(numLateThreads);
+
             List<Thread> lateThreads = new ArrayList<>();
             for (int side = 0; side < 6; ++side) {
                 for (int layer = 0; layer < size; ++layer) {
@@ -992,8 +975,11 @@ class CubeTest {
 
                     lateThreads.add(new Thread(() -> {
                         try {
+                            lateThreadSem.acquire();
+                            semaphoresAcquiredBarrier.await();
                             cube.rotate(finalSide, finalLayer);
-                        } catch (InterruptedException e) {
+                            lateThreadSem.release();
+                        } catch (InterruptedException | BrokenBarrierException e) {
                             hasThrown.set(true);
                         }
                     }));
@@ -1001,10 +987,13 @@ class CubeTest {
             }
             lateThreads.add(new Thread(() -> {
                 try {
+                    lateThreadSem.acquire();
+                    semaphoresAcquiredBarrier.await();
                     String state = cube.show();
                     if (!refShow.get().equals(state))
                         statesEqual.set(false);
-                } catch (InterruptedException e) {
+                    lateThreadSem.release();
+                } catch (InterruptedException | BrokenBarrierException e) {
                     hasThrown.set(true);
                 }
             }));
@@ -1012,11 +1001,13 @@ class CubeTest {
             for (Thread t : lateThreads) {
                 t.start();
             }
+            waitForThreadAtABarrier(semaphoresAcquiredBarrier, noTimeout);
 
             long timeout = taskExecTime * fillerThreads.size();
-            for (Thread thread : lateThreads) {
-                waitForThreadJoinEx(thread, timeout, "A late thread got stuck.");
-                if (thread.isAlive())
+            for (int lateIdx = 0; lateIdx < numLateThreads; ++lateIdx) {
+                boolean lateThreadExited = lateThreadSem.tryAcquire(timeout, TimeUnit.MILLISECONDS);
+                assertTrue(lateThreadExited, "No late thread has reached the end.");
+                if (!lateThreadExited)
                     break;
             }
 
