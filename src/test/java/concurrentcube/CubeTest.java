@@ -16,12 +16,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final long multiplier = 1;
+    private static final long multiplier = 2;
     private static final long taskEntryLag = 50 * multiplier;
     private static final long taskExecTime = 250 * multiplier;
     private static final long interruptLag = 50 * multiplier;
-    private static final long sampleTime = 500;
-    private static final int numRepeats = 8;
+    private static final long sampleTime = 1000;
+    private static final int numRepeats = 64;
+    private static final int maxThreads = 16;
 
     static class RotateOp {
         public int side;
@@ -150,16 +151,16 @@ class CubeTest {
             assertEquals(ref.show(), cube.show(), "The state doesn't match the reference implementation.");
         }
 
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing correctness of sequential rotate operations.")
         void testCorrectnessOfSequentialRotate() throws InterruptedException {
             testTemplate(1);
         }
 
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing correctness of concurrent rotate operations.")
         void testCorrectnessOfRunningRotate() throws InterruptedException {
-            testTemplate(2 * Runtime.getRuntime().availableProcessors());
+            testTemplate(maxThreads);
         }
     }
 
@@ -266,7 +267,7 @@ class CubeTest {
         @RepeatedTest(numRepeats)
         @DisplayName("Testing correctness of rotate and show for multiple threads.")
         void testCorrectnessWhenRunningBoth() throws InterruptedException {
-            testTemplate(2 * Runtime.getRuntime().availableProcessors());
+            testTemplate(maxThreads);
         }
     }
 
@@ -334,8 +335,7 @@ class CubeTest {
             };
 
             List<Thread> threadList = new ArrayList<>();
-            int numThreads = 2 * Runtime.getRuntime().availableProcessors();
-            for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+            for (int threadIdx = 0; threadIdx < maxThreads; ++threadIdx) {
                 threadList.add(new Thread(workerFn));
             }
 
@@ -347,7 +347,7 @@ class CubeTest {
             Random random = new Random();
             long start = System.nanoTime();
             while (System.nanoTime() - start < testDurationNs) {
-                int threadIndex = random.nextInt(numThreads);
+                int threadIndex = random.nextInt(maxThreads);
                 threadList.get(threadIndex).interrupt();
             }
 
@@ -423,8 +423,7 @@ class CubeTest {
             };
 
             List<Thread> threadList = new ArrayList<>();
-            int numThreads = 2 * Runtime.getRuntime().availableProcessors();
-            for (int threadIdx = 0; threadIdx < numThreads; ++threadIdx) {
+            for (int threadIdx = 0; threadIdx < maxThreads; ++threadIdx) {
                 threadList.add(new Thread(workerFn));
             }
 
@@ -691,19 +690,19 @@ class CubeTest {
             };
         }
 
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing whether rotate operations are parallel.")
         void testParallelShowOperations() throws InterruptedException {
             testTemplate(8, showTask(), showTask());
         }
 
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing whether rotate operations on the same side/different layers are parallel.")
         void testParallelRotateSameSide() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(0, 1));
         }
 
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing whether rotate operations on the same axis/different layers are parallel.")
         void testParallelRotateSameAxis() throws InterruptedException {
             testTemplate(8, rotateTask(0, 0), rotateTask(5, 0));
@@ -883,7 +882,7 @@ class CubeTest {
     @Nested
     @DisplayName("Tests for the liveliness of the implementation.")
     class LivelinessTests {
-        @Test
+        @RepeatedTest(numRepeats)
         @DisplayName("Testing the liveliness of the implementation.")
         void testLiveliness() throws InterruptedException {
             // It's impossible to be sure whether a solution satisfied liveliness, but we do
@@ -954,15 +953,17 @@ class CubeTest {
                 for (int layer = 0; layer < size; ++layer) {
                     int finalSide = side;
                     int finalLayer = layer;
-                    fillerThreads.add(new Thread(() -> {
-                        try {
-                            while (stillRunning.get()) {
-                                cube.rotate(finalSide, finalLayer);
+                    for (int dup = 0; dup < 4; ++dup) {
+                        fillerThreads.add(new Thread(() -> {
+                            try {
+                                while (stillRunning.get()) {
+                                    cube.rotate(finalSide, finalLayer);
+                                }
+                            } catch (InterruptedException e) {
+                                hasThrown.set(true);
                             }
-                        } catch (InterruptedException e) {
-                            hasThrown.set(true);
-                        }
-                    }));
+                        }));
+                    }
                 }
             }
             fillerThreads.add(new Thread(() -> {
@@ -1012,7 +1013,7 @@ class CubeTest {
                 t.start();
             }
 
-            long timeout = 4 * taskExecTime * lateThreads.size();
+            long timeout = taskExecTime * fillerThreads.size();
             for (Thread thread : lateThreads) {
                 waitForThreadJoinEx(thread, timeout, "A late thread got stuck.");
                 if (thread.isAlive())

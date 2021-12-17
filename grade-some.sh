@@ -1,3 +1,7 @@
+TIMEOUT="${TIMEOUT:-240}"
+
+files="$@"
+
 stdout=$(mktemp)
 stderr=$(mktemp)
 
@@ -89,7 +93,7 @@ perform_tests() {
         rm -rf build/reports/tests
         rm -rf build/test-results
 
-        timeout --foreground --verbose --signal=SIGINT 60 ./gradlew :test --tests "concurrentcube.CubeTest\$${test}" 1>$stdout 2>$stderr
+        timeout --foreground --verbose --signal=SIGINT $TIMEOUT ./gradlew :test --tests "concurrentcube.CubeTest\$${test}" 1>$stdout 2>$stderr
         STATUS=$?
 
         if [[ "$STATUS" -eq "124" ]]; then
@@ -169,7 +173,7 @@ completed() {
     fi
 }
 
-for solution in payload/*; do
+for solution in $files; do
     name="$(basename "$solution")"
     sol_dir="results/$name"
     echo "[$name]"

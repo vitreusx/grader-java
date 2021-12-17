@@ -4,7 +4,7 @@ import jinja2
 import sys
 
 xml_files = [
-    f"TEST-concurrentcube.CubeTest${name}.xml"
+    f"{name}/xml/TEST-concurrentcube.CubeTest${name}.xml"
     for name in [
         "RotateTests", "CorrectnessOfBoth", "InterruptionCorrectnessTests",
         "InterruptingWaitingTests", "ParallelExecutionTests",
@@ -14,10 +14,10 @@ xml_files = [
 
 
 def main():
-    test_results_path = Path(sys.argv[1])
+    sol_dir = Path(sys.argv[1])
     points = [0 for _ in range(len(xml_files))]
     for idx, xml_file in enumerate(xml_files):
-        xml_file_path = test_results_path / Path(xml_file)
+        xml_file_path = sol_dir / Path(xml_file)
         if xml_file_path.exists():
             tree = ET.parse(xml_file_path)
             root = tree.getroot()
