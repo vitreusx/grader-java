@@ -13,13 +13,13 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final long multiplier = 2;
+    private static final long multiplier = 5;
     private static final long taskEntryLag = 125 * multiplier;
     private static final long taskExecTime = 250 * multiplier;
     private static final long interruptLag = 125 * multiplier;
     private static final long noTimeout = 9999999;
     private static final long sampleTime = 250;
-    private static final int numRepeats = 16;
+    private static final int numRepeats = 64;
     private static final int maxThreads = 16;
 
     static class RotateOp {
@@ -964,7 +964,7 @@ class CubeTest {
             Thread.sleep(sampleTime);
 
             int numLateThreads = 6 * size + 1;
-            CyclicBarrier semaphoresAcquiredBarrier = new CyclicBarrier(numLateThreads+1);
+            CyclicBarrier semaphoresAcquiredBarrier = new CyclicBarrier(numLateThreads + 1);
             Semaphore lateThreadSem = new Semaphore(numLateThreads);
 
             List<Thread> lateThreads = new ArrayList<>();

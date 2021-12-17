@@ -1,3 +1,5 @@
+TIMEOUT="${TIMEOUT:-120}"
+
 stdout=$(mktemp)
 stderr=$(mktemp)
 
@@ -89,7 +91,7 @@ perform_tests() {
         rm -rf build/reports/tests
         rm -rf build/test-results
 
-        timeout --foreground --verbose --signal=SIGINT 60 ./gradlew :test --tests "concurrentcube.CubeTest\$${test}" 1>$stdout 2>$stderr
+        timeout --foreground --verbose --signal=SIGINT $TIMEOUT ./gradlew :test --tests "concurrentcube.CubeTest\$${test}" 1>$stdout 2>$stderr
         STATUS=$?
 
         if [[ "$STATUS" -eq "124" ]]; then

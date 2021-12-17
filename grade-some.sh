@@ -1,4 +1,4 @@
-TIMEOUT="${TIMEOUT:-240}"
+TIMEOUT="${TIMEOUT:-120}"
 
 files="$@"
 
