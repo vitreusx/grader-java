@@ -5,6 +5,7 @@ import org.junit.jupiter.api.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
@@ -169,6 +170,8 @@ class CubeTest {
             // This is pretty much the same test, but now we also do show calls.
             int size = 3;
 
+            // In order to validate the solution, we have the reference Cube implementation
+            // with which we duplicate the moves (in beforeRotation etc.)
             solution.Cube ref = new solution.Cube(size, (x, y) -> {
             }, (x, y) -> {
             }, () -> {
@@ -177,12 +180,6 @@ class CubeTest {
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
-            // In order to handle recording the show operations, we need to do something as
-            // follows:
-            // 1. Add the rotate op with null state within "beforeRotation".
-            // 2. Once we exit the show call and get the state, we fill it in.
-            // We use showOpRef for holding the incomplete rotate op added to the history.
-            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean stillRunning = new AtomicBoolean(true);
             AtomicBoolean testMode = new AtomicBoolean(true);
 
@@ -276,10 +273,9 @@ class CubeTest {
         @DisplayName("Simply testing integrity of the cube state.")
         void testIntegrity() throws InterruptedException {
             // The scenario here is fairly simple: we do stuff as in the previous test, but
-            // the main thread
-            // will randomly interrupt threads for some time. The interrupted threads will
-            // continue working looping
-            // so that we interrupt enough of them.
+            // the main thread will continuously interrupt a random thread for some time.
+            // The interrupted threads will continue working looping so that we interrupt
+            // enough of them.
             int size = 3;
 
             solution.Cube ref = new solution.Cube(size, (x, y) -> {
@@ -290,7 +286,6 @@ class CubeTest {
             ThreadLocal<String> refShow = new ThreadLocal<>();
             AtomicBoolean statesEqual = new AtomicBoolean(true);
 
-            ThreadLocal<ShowOp> showOpRef = new ThreadLocal<>();
             AtomicBoolean stillRunning = new AtomicBoolean(true);
             AtomicBoolean testMode = new AtomicBoolean(true);
 
@@ -365,10 +360,8 @@ class CubeTest {
         @DisplayName("Testing whether the interruptions actually end the threads.")
         void testWhetherInterruptionsEndThreads() throws InterruptedException {
             // The way we test this is as follows: the worker threads run an infinite loop,
-            // and
-            // the only way out is via the InterruptedException catch. Then, we interrupt
-            // every thread and check
-            // if, after a while, all of them are not alive.
+            // and the only way out is via the InterruptedException catch. Then, we interrupt
+            // every thread and check if, after a while, all of them are not alive.
             int size = 3;
 
             solution.Cube ref = new solution.Cube(size, (x, y) -> {
@@ -567,10 +560,8 @@ class CubeTest {
     class ParallelExecutionTests {
         // This is an unified template for running the tasks. The "Function<Cube,
         // String>" is sort-of a fused
-        // version of both show and rotate: the rotate task will return null, which we
-        // will detect so that we can
-        // set the state string to the appropriate value in showOp in the history
-        // validation part of the code.
+        // version of both show and rotate: the rotate task will return null and the show task
+        // will not.
         void testTemplate(int size, Function<Cube, String> task1, Function<Cube, String> task2)
                 throws InterruptedException {
             // In order to check whether the execution is parallel, we set up a barrier with
