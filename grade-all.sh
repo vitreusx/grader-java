@@ -75,7 +75,9 @@ assemble() {
     fi
 }
 
-declare -a test_names=("RotateTests" "CorrectnessOfBoth" "InterruptionCorrectnessTests" "InterruptingWaitingTests" "ParallelExecutionTests" "SequentialityTests" "LivelinessTests")
+declare -a test_names=("RotateTestsLite" "RotateTestsFull" "BothOpsTestsLite" "BothOpsTestsFull" \
+"InterruptionTestsLite" "InterruptionCorrectnessFull" "ParallelExec1" "ParallelExec2" "ParallelExec3" \
+"SeqExec1" "SeqExec2" "SeqExec3" "SeqExec4" "LivelinessTests")
 
 perform_tests() {
     rm -rf build src/main/java $output_dir
@@ -105,7 +107,7 @@ perform_tests() {
         rsync $stderr "$test_dir/err"
     done
 
-    python3 compose_report.py $output_dir >"$output_dir/report.md"
+#    python3 compose_report.py $output_dir >"$output_dir/report.md"
     return 0
 }
 
