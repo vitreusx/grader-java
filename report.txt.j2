@@ -1,0 +1,8 @@
+Suma: {{"{:.2f}".format(total)}}/7
+
+Testy:
+{%- for desc, pts in results %}
+{{"{:.2f}".format(pts)}} | {{desc}}
+{%- endfor %}
+
+Uwagi: N/A

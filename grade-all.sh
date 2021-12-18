@@ -107,7 +107,7 @@ perform_tests() {
         rsync $stderr "$test_dir/err"
     done
 
-#    python3 compose_report.py $output_dir >"$output_dir/report.md"
+    python3 compose_report.py $output_dir >"$output_dir/report.md"
     return 0
 }
 
