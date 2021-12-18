@@ -328,14 +328,26 @@ class CubeTest {
                     beforeRotation, afterRotation,
                     beforeShowing, afterShowing);
 
-            Runnable fn = () -> {
+            CyclicBarrier interruptBarrier = new CyclicBarrier(2);
+            Runnable rotateFn = () -> {
                 try {
                     cube.rotate(0, 0);
                 }
-                catch (InterruptedException ignored) {}
+                catch (InterruptedException ignored) {
+                    stallOnABarrier(interruptBarrier);
+                }
             };
 
-            Thread thr1 = new Thread(fn), thr2 = new Thread(fn);
+            Runnable showFn = () -> {
+                try {
+                    cube.show();
+                }
+                catch (InterruptedException ignored) {
+                    stallOnABarrier(interruptBarrier);
+                }
+            };
+
+            Thread thr1 = new Thread(rotateFn), thr2 = new Thread(rotateFn), thr3 = new Thread(showFn);
 
             thr1.start();
             waitForThreadAtABarrier(firstThreadEnter, taskEntryLag);
@@ -344,8 +356,17 @@ class CubeTest {
             Thread.sleep(taskEntryLag);
             assertTrue(thr2.isAlive(), "Thread #2 has for some reason finished execution??");
             thr2.interrupt();
-            Thread.sleep(interruptLag);
-            assertFalse(thr2.isAlive(), "Thread #2 should have left the waiting.");
+            assertDoesNotThrow(() -> {
+                interruptBarrier.await(interruptLag, TimeUnit.MILLISECONDS);
+            }, "Thread #2 should have left the waiting.");
+
+            thr3.start();
+            Thread.sleep(taskEntryLag);
+            assertTrue(thr3.isAlive(), "Thread #3 has for some reason finished execution??");
+            thr3.interrupt();
+            assertDoesNotThrow(() -> {
+                interruptBarrier.await(interruptLag, TimeUnit.MILLISECONDS);
+            }, "Thread #3 should have left the waiting.");
 
             waitForThreadAtABarrier(firstThreadExit, taskEntryLag);
             waitForThreadJoin(thr1, "Somehow thread #1 hasn't finished");
