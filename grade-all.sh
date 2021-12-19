@@ -1,4 +1,4 @@
-TIMEOUT="${TIMEOUT:-60}"
+TIMEOUT="${TIMEOUT:-600}"
 
 stdout=$(mktemp)
 stderr=$(mktemp)

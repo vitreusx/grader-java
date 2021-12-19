@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CubeTest {
     private static final double showProbability = 0.2;
-    private static final long multiplier = 1;
+    private static final long multiplier = 10;
     private static final long taskEntryLag = 125 * multiplier;
     private static final long taskExecTime = 250 * multiplier;
     private static final long interruptLag = 125 * multiplier;
