@@ -1,54 +1,82 @@
-# Java Assignment Testing
+# Zadanie I z Javy - Testy
 
-## Tests
+## Repo
+Testy znajdują się na repo `https://github.com/vitreusx/grader-java`.
 
-There are 7 test suites, each worth 1 point if all of the constituent tests pass:
+## Opis testów
 
-- `RotateTests`: we run `rotate` and check if the final state matches the reference implementation;
-- `CorrectnessOfBoth`: we run `rotate` and `show` and check if the intermediate states, as well as the final one 
-  match the reference implementation;
-- `InterruptionCorrectnessTests`: here we do a version of `CorrectnessOfBoth` where the main thread continuously
-  interrupts the worker threads;
-- `InterruptingWaitingThreads`: here we check if the interrupted threads are *actually interrupted*. This we do by 
-  simply interrupting a thread and checking if it has reached the exit barrier.
-- `ParallelExecutionTests`: here we check whether nonconflicting operations (say, `rotate` on different layers of the 
-  same axis or multiple `show` operations) can be performed in parallel, by running two threads and checking if both 
-  can reach `beforeX`/`afterX` callbacks;
-- `SequentialityTests`: here we check whether conflicting operations are indeed mutually exclusive, by running one 
-  thread, having it reach the callback (and stop at it with a barrier), and running another one and ensuring that it
-  has *not* reached the callback;
-- `LivelinessTests`: here we check whether threads can or cannot be starved. We launch two sets of threads: "filler" 
-  threads which are supposed to prevent execution, and "late" threads for which we test if they can run. The filler
-  threads are first all started, then we launch the late threads and see if any of them can run the operation.
+Jest 14 testów, razem wartych 7 punktów.
+- Proste testy obsługi rotate (`RotateTestsLite`, 0.5 pkt): jeden lub dwa wątki wykonują operację `rotate` przez 
+  jakiś czas, na koniec testujemy czy stan jest taki sam jak dla referencyjnego rozwiązania symulującego te same 
+  operacje.
+- Pełne testy obsługi rotate (`RotateTestsFull`, 0.5 pkt): wariant powyższych testów z większą ilością wątków.
+- Proste testy obsługi rotate i show (`BothOpsTestsLite`, 0.5 pkt): jeden lub dwa wątki wykonują albo `rotate` albo 
+  `show` przez jakiś czas, na koniec testujemy czy stan jest taki sam jak dla referencyjnego rozwiązania.
+- Pełne testy obsługi rotate i show (`BothOpsTestsFull`, 0.5 pkt): wariant powyższych testów z większą ilością wątków.
+- Podstawowa obsługa przerwań (`InterruptionTestsLite`, 1 pkt): tworzymy trzy wątki, z czego dwa wykonują `rotate(0, 
+  0)`, a trzeci `show()`. Uruchamiamy pierwszy i blokujemy go na `beforeRotation`, po czym uruchamiamy drugi wątek. 
+  Sprawdzamy czy jest on zablokowany (i.e. czeka na swoją kolej), po czym przerywamy go. Następnie sprawdzamy, czy 
+  został on faktycznie przerwany - dokładniej, czy czeka na barierze ustawionej w bloku `catch 
+  (InterruptedException`). Podobnie postępujemy z trzecim wątkiem.
+- Pełna obsługa przerwań (`InterruptionCorrectnessFull`, 1 pkt): tworzymy wiele wątków, i z głównego wątku 
+  przerywamy je. Na koniec sprawdzamy, czy stan kostki jest poprawny.
+- Równoległe wykonywanie dozwolonych operacji (I) (`ParallelExec1`, 0.3 pkt): sprawdzamy, czy operacje `show` dają 
+  się uruchamiać współbieżnie, co sprawdzamy w następujący sposób: tworzymy dwa wątki, uruchamiamy je i 
+  sprawdzamy czy oba czekają na barierze ustawionej w `beforeShow`. Ponawiamy podobną procedurę z `afterShow`.
+- Równoległe wykonywanie dozwolonych operacji (II) (`ParallelExec2`, 0.3 pkt): podobnie jak wyżej, tylko z 
+  operacjami `rotate` dla tej samej strony i różnych warstw.
+- Równoległe wykonywanie dozwolonych operacji (III) (`ParallelExec3`, 0.4 pkt): podobnie jak wyżej, tylko z 
+  operacjami `rotate` dla tej samej osi i różnych warstw (np. `rotate(0, 0)` i `rotate(5, 0)`).
+- Sekwencyjne wykonywanie wykluczających się operacji (I) (`SeqExec1`, 0.25 pkt): sprawdzamy, czy operacje `rotate(0,
+  0)` i `show()` nie mogą być wykonane współbieżnie. W tym celu tworzymy dwa wątki, uruchamiamy 
+  jeden z nich, blokujemy go na `beforeRotate`, uruchamiamy drugi i sprawdzamy czy nie może on dojść do tej samej 
+  bariery.
+- Sekwencyjne wykonywanie wykluczających się operacji (II) (`SeqExec2`, 0.25 pkt): podobnie jak wyżej, tylko oba 
+  wątki wykonują `rotate` dla różnych osi.
+- Sekwencyjne wykonywanie wykluczających się operacji (III) (`SeqExec3`, 0.25 pkt): podobnie jak wyżej, tylko z 
+  `rotate` dla tej samej strony i warstwy.
+- Sekwencyjne wykonywanie wykluczających się operacji (IV) (`SeqExec4`, 0.25 pkt): podobnie jak wyżej, tylko z 
+  `rotate` dla ten samej *osi* i warstwy (np. dla kostki z `size=3`, `rotate(0, 0)` i `rotate(5, 2)` operują na tej 
+  samej warstwie).
+- Żywotność rozwiązania (`LivelinessTests`, 1 pkt): sprawdzamy czy wątki nie mogą być zagłodzone. W tym celu 
+  tworzymy dwie grupy wątków: "zapełniacze" i "opóźnione". Tworzymy i startujemy te pierwsze (wykonują one operacje 
+  w pętli nieskończonej), czekamy chwilę aż dostęp do kostki będzie nasycony, po czym tworzymy i startujemy te 
+  drugie (one owej pętli nie mają), i sprawdzamy czy są one w stanie zakończyć pracę (czyli uzyskać dostęp do kostki)
+  w "sensownym czasie".
 
-## Running
+## Reklamacje
 
-In order to validate your solution, you can run `./grade-some.sh (path to package with the solution)`. The result shall 
-be stored in the `results/(basename)`, which shall contain data for each of the pass:
+Testy znajdują się w `src/test/java/concurrentcube/CubeTest.java`. Referencyjne rozwiązanie znajduje się w 
+`src/test/java/solution`.
 
-- `name_check`: checking whether the archive has a correct name;
-- `unpacking`: checking whether we can unpack the archive with `tar xzf`;
-- `val_compile`: running `javac -Xlint -Werror Validate.java`;
-- `validate`: running `java Validate`;
-- `assemble`: running `./gradlew clean assemble`;
-- `perform_tests`: running the tests.
+Swoje rozwiązanie można sprawdzić tworząc folder `payload/`, wrzucając tam swoje rozwiązanie i wykonując `./grade-all.sh`.
+Wyniki znajdą się w folderze `results/`. Skrypt testujący działa następująco - dla każdego rozwiązania w `payload/`, 
+jest wykonywana procedura testowania składająca się z 5 faz (*passes*):
+- `name_check`: sprawdzanie nazwy;
+- `unpacking`: wypakowywanie za pomocą `tar xzf`;
+- `val_compile`: wykonanie `javac -Xlint -Werror Validate.java`;
+- `validate`: wykonanie `java Validate`;
+- `assemble`: wykonanie `./gradlew clean assemble`;
+- `perform_tests`: wykonanie `./gradlew :test --tests "concurrentcube.CubeTest\$${test}"` z timeoutem dla każdego z 14 
+  testów.
 
-Each of the pass directories contains `input/` and `output/` directories, as well as possibly the `stdout` and
-`stderr` files. If the solution is incorrect at some stage but one wants to check the next ones, there are two options:
+Dla każdego z nich jest tworzony odpowiedni folder `results/${solution}/${pass_name}` (np. `results/sol.tar.
+  gz/perform_tests`). W owym folderze znajdują się foldery `input/` i `output/`. Jeżeli wykonanie fazy się nie 
+  powiodło, `stderr` i `stdout` mogą zawierać odpowiednie komunikaty. Aby manualnie naprawić rozwiązanie w zakresie 
+  danej fazy, są dostępne dwie opcje:
+- można zmienić zawartość `input/` i wrzucić poprawioną wersję do `fixed_input/`, po czym skrypt automatycznie 
+  sprawdzi owe poprawione rozwiązanie;
+- można stworzyć folder `fixed_output/` i stworzyć w folderze fazy plik `.allowed`.
 
-- create a `fixed_input/` directory alongside `input/`, if it can be fixed by changing the input and running the
-  same procedure;
-- create a `fixed_output/` directory and add `.allowed` file, if one wants to create the output of the next stage 
-  manually.
+Skrypt można kontrolować następującymi zmiennymi środowiskowymi:
+- `RECHECK`: standardowo rozwiązania, które przejdą fazę przed testowaniem (dokładniej, fazę `assemble`), nie są pod 
+  tym kątem znowu sprawdzane - ustawienie tej zmiennej na coś niepustego zmieni to zachowanie;
+- `ONLY_TEST`: jeżeli niepuste, skrypt nie przeprowadzi walidacji rozwiązań;
+- `RETEST`: standardowo rozwiązania, które przejdą fazę `perform_tests`, nie są znowu testowane - ustawienie tej 
+  zmiennej na coś niepustego to zmieni;
+- `ONLY_VALIDATE`: jeżeli niepuste, skrypt nie przeprowadzi testów rozwiązań.
 
-Default input for each pass is the output of the previous one.
-
-Insofar as `perform_tests` pass is concerned, the relevant variables to tweak are:
-
-- `TIMEOUT` variable in `grade_some.sh` script, which is the number of seconds that each test suite is allowed to run 
-  for;
-- static final variables at the top of the `src/test/java/concurrentcube/CubeTest.java` file, which control timeouts,
-  number of repeats of various tests etc.
-
-All of these can be increased so as to check whether the default values were too stringent and so the points for the
-relevant tests were improperly not given (although the starting values are fairly generous).
+Zmienne, które można tweakować, aby sprawdzić czy nie doszło do pomyłki w testowaniu to:
+- timeout `TIMEOUT` w skrypcie `./grade-all.sh` - i.e. timeout w sekundach dla wykonania każdego z 14 testów;
+- timeouty i inne zmienne na górze klasy `CubeTest` w `src/test/java/concurrentcube/CubeTest.java`, w szczególności 
+  `multiplier`. 
