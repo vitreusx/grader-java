@@ -71,6 +71,13 @@ Dla każdego z nich jest tworzony odpowiedni folder `results/${solution}/${pass_
   sprawdzi owe poprawione rozwiązanie;
 - można stworzyć folder `fixed_output/` i stworzyć w folderze fazy plik `.allowed`.
 
+Końcowym wynikiem całego skryptu jest folder `results/(xy123456)/perform_tests/output`, w którym znajdują się:
+
+- plik `report.txt` ze skompilowanym raportem;
+- folder dla każdego z 14 testów, w którym znajdują się:
+  - pliki `out` i `err` z (odpowiednio) standardowym wyjściem i strumieniem błędów;
+  - folder `html` z raportem dla danego testu w formie HTML.
+
 Skrypt można kontrolować następującymi zmiennymi środowiskowymi:
 
 - `RECHECK`: standardowo rozwiązania, które przejdą fazę przed testowaniem (dokładniej, fazę `assemble`), nie są pod 
