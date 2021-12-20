@@ -1,11 +1,15 @@
 # Zadanie I z Javy - Testy
 
 ## Repo
-Testy znajdują się na repo `https://github.com/vitreusx/grader-java`.
+Testy znajdują się na repo `https://github.com/vitreusx/grader-java`. Suita testów JUnit znajduje się w pliku 
+`src/test/java/concurrentcube/CubeTest.java`. Używany jest także package `src/test/java/solution`, będący 
+rozwiązaniem zadania (zwany dalej "referencyjnym") używanym w ramach testów. **Uwaga: nie jest to rozwiązanie 
+wzorcowe, tylko część implementacji testów.**
 
 ## Opis testów
 
 Jest 14 testów, razem wartych 7 punktów.
+
 - Proste testy obsługi rotate (`RotateTestsLite`, 0.5 pkt): jeden lub dwa wątki wykonują operację `rotate` przez 
   jakiś czas, na koniec testujemy czy stan jest taki sam jak dla referencyjnego rozwiązania symulującego te same 
   operacje.
@@ -46,12 +50,10 @@ Jest 14 testów, razem wartych 7 punktów.
 
 ## Reklamacje
 
-Testy znajdują się w `src/test/java/concurrentcube/CubeTest.java`. Referencyjne rozwiązanie znajduje się w 
-`src/test/java/solution`.
-
 Swoje rozwiązanie można sprawdzić tworząc folder `payload/`, wrzucając tam swoje rozwiązanie i wykonując `./grade-all.sh`.
 Wyniki znajdą się w folderze `results/`. Skrypt testujący działa następująco - dla każdego rozwiązania w `payload/`, 
 jest wykonywana procedura testowania składająca się z 5 faz (*passes*):
+
 - `name_check`: sprawdzanie nazwy;
 - `unpacking`: wypakowywanie za pomocą `tar xzf`;
 - `val_compile`: wykonanie `javac -Xlint -Werror Validate.java`;
@@ -64,11 +66,13 @@ Dla każdego z nich jest tworzony odpowiedni folder `results/${solution}/${pass_
   gz/perform_tests`). W owym folderze znajdują się foldery `input/` i `output/`. Jeżeli wykonanie fazy się nie 
   powiodło, `stderr` i `stdout` mogą zawierać odpowiednie komunikaty. Aby manualnie naprawić rozwiązanie w zakresie 
   danej fazy, są dostępne dwie opcje:
+
 - można zmienić zawartość `input/` i wrzucić poprawioną wersję do `fixed_input/`, po czym skrypt automatycznie 
   sprawdzi owe poprawione rozwiązanie;
 - można stworzyć folder `fixed_output/` i stworzyć w folderze fazy plik `.allowed`.
 
 Skrypt można kontrolować następującymi zmiennymi środowiskowymi:
+
 - `RECHECK`: standardowo rozwiązania, które przejdą fazę przed testowaniem (dokładniej, fazę `assemble`), nie są pod 
   tym kątem znowu sprawdzane - ustawienie tej zmiennej na coś niepustego zmieni to zachowanie;
 - `ONLY_TEST`: jeżeli niepuste, skrypt nie przeprowadzi walidacji rozwiązań;
@@ -77,6 +81,7 @@ Skrypt można kontrolować następującymi zmiennymi środowiskowymi:
 - `ONLY_VALIDATE`: jeżeli niepuste, skrypt nie przeprowadzi testów rozwiązań.
 
 Zmienne, które można tweakować, aby sprawdzić czy nie doszło do pomyłki w testowaniu to:
+
 - timeout `TIMEOUT` w skrypcie `./grade-all.sh` - i.e. timeout w sekundach dla wykonania każdego z 14 testów;
 - timeouty i inne zmienne na górze klasy `CubeTest` w `src/test/java/concurrentcube/CubeTest.java`, w szczególności 
   `multiplier`. 
